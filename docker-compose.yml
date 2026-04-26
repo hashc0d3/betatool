@@ -12,6 +12,11 @@ services:
       PORT: "4001"
       NODE_ENV: production
       FRONTEND_ORIGIN: "https://playbetatool.ru,http://playbetatool.ru,http://www.playbetatool.ru,https://www.playbetatool.ru,http://155.117.46.144,http://localhost:3000"
+      # Совпадают с дефолтами в AuthService; переопределите в .env при необходимости.
+      ADMIN_LOGIN: "playbetaadmin"
+      ADMIN_PASSWORD: "playbetaadmin2026!"
+      # Должен совпадать между перезапусками; для продакшена задайте свой длинный секрет (например в .env).
+      JWT_SECRET: "playbeta-docker-jwt-secret-min-32-characters-long!"
     volumes:
       - ./data:/app/data
       - ./uploads:/app/uploads

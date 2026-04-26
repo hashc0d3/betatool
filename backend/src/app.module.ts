@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { join } from 'path';
+import { AuthModule } from './auth/auth.module';
 import { Product } from './entities/product.entity';
 import { Sale } from './entities/sale.entity';
 import { ProductsModule } from './products/products.module';
@@ -16,6 +17,7 @@ import { SalesModule } from './sales/sales.module';
       entities: [Product, Sale],
       synchronize: true,
     }),
+    AuthModule,
     ServeStaticModule.forRoot({
       rootPath: join(process.cwd(), 'uploads'),
       serveRoot: '/uploads/',

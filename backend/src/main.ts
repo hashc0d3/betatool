@@ -1,5 +1,6 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import cookieParser from 'cookie-parser';
 import { mkdirSync } from 'fs';
 import { join } from 'path';
 import { AppModule } from './app.module';
@@ -9,6 +10,7 @@ async function bootstrap() {
   mkdirSync(join(process.cwd(), 'uploads', 'products'), { recursive: true });
 
   const app = await NestFactory.create(AppModule);
+  app.use(cookieParser());
   const originsEnv =
     process.env.FRONTEND_ORIGIN ?? 'http://localhost:3000';
   const origin = originsEnv.includes(',')
