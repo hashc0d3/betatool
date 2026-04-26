@@ -1,0 +1,25 @@
+# Данные на сервере / в Docker (SQLite и загрузки)
+/data/
+/uploads/
+
+# Dependencies & build
+node_modules/
+**/node_modules/
+dist/
+.next/
+out/
+
+# Env & local
+.env
+.env.*
+!.env.example
+
+# IDE & OS
+.idea/
+.vscode/
+*.log
+.DS_Store
+Thumbs.db
+
+# Test / coverage
+coverage/

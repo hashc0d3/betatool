@@ -1,0 +1,494 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { apiGet, apiPostJson, assetUrl } from "@/lib/api";
+
+type Product = {
+  id: number;
+  name: string;
+  price: number;
+  stock: number;
+  imageUrl: string | null;
+};
+
+type CartLine = {
+  productId: number;
+  name: string;
+  unitPrice: number;
+  quantity: number;
+  imageUrl: string | null;
+};
+
+function qtyForProduct(cart: CartLine[], productId: number): number {
+  return cart.find((l) => l.productId === productId)?.quantity ?? 0;
+}
+
+export default function SalePage() {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [cart, setCart] = useState<CartLine[]>([]);
+  const [search, setSearch] = useState("");
+  /** Количество к добавлению с карточки (строка для input) */
+  const [addQtyByProduct, setAddQtyByProduct] = useState<Record<number, string>>(
+    {},
+  );
+  const [cartOpen, setCartOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const list = await apiGet<Product[]>("/products");
+      setProducts(list);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Ошибка загрузки");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  useEffect(() => {
+    if (!cartOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setCartOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [cartOpen]);
+
+  const productById = useMemo(() => {
+    const m = new Map<number, Product>();
+    for (const p of products) m.set(p.id, p);
+    return m;
+  }, [products]);
+
+  const filteredProducts = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return products;
+    return products.filter((p) => p.name.toLowerCase().includes(q));
+  }, [products, search]);
+
+  function draftQtyFor(productId: number): string {
+    return addQtyByProduct[productId] ?? "1";
+  }
+
+  function setDraftQty(productId: number, value: string) {
+    setAddQtyByProduct((prev) => ({ ...prev, [productId]: value }));
+  }
+
+  function addToCart(p: Product) {
+    setMessage(null);
+    setError(null);
+    if (p.stock <= 0) return;
+    const inCart = qtyForProduct(cart, p.id);
+    const maxAdd = p.stock - inCart;
+    if (maxAdd <= 0) {
+      setError("Этот товар уже полностью в корзине по остатку");
+      return;
+    }
+
+    const raw = draftQtyFor(p.id).trim().replace(",", ".");
+    const n = Math.floor(Number(raw));
+    if (!Number.isFinite(n) || n < 1) {
+      setError("Укажите целое количество не меньше 1");
+      return;
+    }
+    if (n > maxAdd) {
+      setError(`Можно добавить не больше ${maxAdd} шт.`);
+      return;
+    }
+
+    setCart((prev) => {
+      const i = prev.findIndex((l) => l.productId === p.id);
+      if (i === -1) {
+        return [
+          ...prev,
+          {
+            productId: p.id,
+            name: p.name,
+            unitPrice: p.price,
+            quantity: n,
+            imageUrl: p.imageUrl,
+          },
+        ];
+      }
+      const next = [...prev];
+      next[i] = { ...next[i], quantity: next[i].quantity + n };
+      return next;
+    });
+    setDraftQty(p.id, "1");
+    setCartOpen(true);
+  }
+
+  function setLineQuantity(productId: number, quantity: number) {
+    setError(null);
+    const p = productById.get(productId);
+    if (!p) return;
+    if (quantity <= 0) {
+      setCart((prev) => prev.filter((l) => l.productId !== productId));
+      return;
+    }
+    if (quantity > p.stock) {
+      setError("Недостаточно товара на складе");
+      return;
+    }
+    setCart((prev) =>
+      prev.map((l) =>
+        l.productId === productId ? { ...l, quantity } : l,
+      ),
+    );
+  }
+
+  function removeLine(productId: number) {
+    setCart((prev) => prev.filter((l) => l.productId !== productId));
+  }
+
+  const cartTotals = useMemo(() => {
+    let qty = 0;
+    let sum = 0;
+    for (const l of cart) {
+      qty += l.quantity;
+      sum += l.unitPrice * l.quantity;
+    }
+    return {
+      qty,
+      sum: Math.round(sum * 100) / 100,
+    };
+  }, [cart]);
+
+  async function checkout() {
+    if (cart.length === 0) return;
+    setMessage(null);
+    setError(null);
+    setSubmitting(true);
+    try {
+      for (let i = 0; i < cart.length; i++) {
+        const line = cart[i];
+        try {
+          await apiPostJson("/sales", {
+            productId: line.productId,
+            quantity: line.quantity,
+          });
+        } catch (err) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Ошибка при оформлении. Часть позиций могла сохраниться — проверьте отчёты.",
+          );
+          setCart(cart.slice(i));
+          await load();
+          return;
+        }
+      }
+      setCart([]);
+      setMessage("Продажи записаны, остатки обновлены");
+      await load();
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
+          Регистрация продажи
+        </h1>
+        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+          Корзина — сайдбар справа; при добавлении товара открывается сама. Её
+          можно скрыть кнопкой «×» или снова открыть с полоски справа.
+        </p>
+      </div>
+
+      {message ? (
+        <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">
+          {message}
+        </p>
+      ) : null}
+      {error ? (
+        <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-800 dark:bg-red-950 dark:text-red-200">
+          {error}
+        </p>
+      ) : null}
+
+      {loading ? (
+        <p className="text-sm text-zinc-500">Загрузка…</p>
+      ) : products.length === 0 ? (
+        <p className="text-sm text-zinc-500">
+          Нет товаров. Сначала добавьте их в разделе «Товары».
+        </p>
+      ) : (
+        <>
+          {cartOpen ? (
+            <div
+              role="presentation"
+              className="fixed inset-0 z-40 bg-zinc-950/40 backdrop-blur-[1px] lg:hidden"
+              onClick={() => setCartOpen(false)}
+            />
+          ) : null}
+
+          {!cartOpen ? (
+            <button
+              type="button"
+              onClick={() => setCartOpen(true)}
+              className="fixed z-50 flex flex-col items-center justify-center gap-1 border border-zinc-200 bg-white text-zinc-900 shadow-lg transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800 max-lg:bottom-6 max-lg:right-4 max-lg:rounded-full max-lg:px-4 max-lg:py-3 lg:right-0 lg:top-[45%] lg:w-12 lg:-translate-y-1/2 lg:rounded-l-xl lg:rounded-r-none lg:border-r-0 lg:px-1 lg:py-8"
+            >
+              <span className="text-xs font-semibold tracking-tight lg:[writing-mode:vertical-rl] lg:rotate-180">
+                Корзина
+              </span>
+              {cartTotals.qty > 0 ? (
+                <span className="rounded-full bg-zinc-900 px-2 py-0.5 text-[11px] font-bold text-white tabular-nums dark:bg-zinc-100 dark:text-zinc-900">
+                  {cartTotals.qty}
+                </span>
+              ) : null}
+            </button>
+          ) : null}
+
+          <aside
+            className={`fixed bottom-0 right-0 top-0 z-50 flex w-[min(100vw,380px)] flex-col border-l border-zinc-200 bg-white shadow-2xl transition-transform duration-300 ease-out dark:border-zinc-800 dark:bg-zinc-950 ${
+              cartOpen ? "translate-x-0" : "translate-x-full"
+            }`}
+          >
+            <div className="flex shrink-0 items-start justify-between gap-2 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
+              <div className="min-w-0">
+                <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                  Корзина
+                </h2>
+                <p className="mt-0.5 text-xs text-zinc-500">
+                  {cart.length === 0
+                    ? "Пока пусто"
+                    : `${cartTotals.qty} шт. · ${cartTotals.sum.toFixed(2)}`}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCartOpen(false)}
+                className="shrink-0 rounded-md p-2 text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                aria-label="Скрыть корзину"
+              >
+                <span className="text-lg leading-none">×</span>
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto p-3">
+              {cart.length === 0 ? (
+                <p className="py-8 text-center text-sm text-zinc-500">
+                  Укажите количество на карточке и нажмите «Добавить в корзину»
+                </p>
+              ) : (
+                <ul className="space-y-3">
+                  {cart.map((line) => {
+                    const img = assetUrl(line.imageUrl);
+                    const p = productById.get(line.productId);
+                    const max = p?.stock ?? line.quantity;
+                    return (
+                      <li
+                        key={line.productId}
+                        className="flex gap-3 rounded-lg border border-zinc-100 bg-zinc-50/80 p-2 dark:border-zinc-800 dark:bg-zinc-900/50"
+                      >
+                        <div className="h-14 w-14 shrink-0 overflow-hidden rounded-md bg-zinc-200 dark:bg-zinc-800">
+                          {img ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={img}
+                              alt=""
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-full items-center justify-center text-[10px] text-zinc-400">
+                              —
+                            </div>
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="line-clamp-2 text-xs font-medium text-zinc-900 dark:text-zinc-100">
+                            {line.name}
+                          </p>
+                          <p className="mt-0.5 text-xs text-zinc-500">
+                            {Number(line.unitPrice).toFixed(2)} ×{" "}
+                            {line.quantity}
+                          </p>
+                          <div className="mt-2 flex items-center gap-1">
+                            <button
+                              type="button"
+                              aria-label="Меньше"
+                              className="flex h-7 w-7 items-center justify-center rounded border border-zinc-300 text-sm dark:border-zinc-600"
+                              onClick={() =>
+                                setLineQuantity(
+                                  line.productId,
+                                  line.quantity - 1,
+                                )
+                              }
+                            >
+                              −
+                            </button>
+                            <span className="min-w-[1.5rem] text-center text-sm tabular-nums">
+                              {line.quantity}
+                            </span>
+                            <button
+                              type="button"
+                              aria-label="Больше"
+                              disabled={line.quantity >= max}
+                              className="flex h-7 w-7 items-center justify-center rounded border border-zinc-300 text-sm disabled:opacity-40 dark:border-zinc-600"
+                              onClick={() =>
+                                setLineQuantity(
+                                  line.productId,
+                                  line.quantity + 1,
+                                )
+                              }
+                            >
+                              +
+                            </button>
+                            <button
+                              type="button"
+                              className="ml-auto text-xs text-red-600 hover:underline dark:text-red-400"
+                              onClick={() => removeLine(line.productId)}
+                            >
+                              Удалить
+                            </button>
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+
+            <div className="shrink-0 border-t border-zinc-200 p-3 dark:border-zinc-800">
+              <button
+                type="button"
+                disabled={submitting || cart.length === 0}
+                onClick={() => void checkout()}
+                className="w-full rounded-md bg-zinc-900 py-2.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              >
+                {submitting ? "Оформление…" : "Оформить продажу"}
+              </button>
+            </div>
+          </aside>
+
+          <div
+            className={`space-y-4 pr-0 max-lg:pb-24 ${cartOpen ? "lg:pr-0" : "lg:pr-14"}`}
+          >
+            <div>
+              <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                Поиск по товарам
+              </label>
+              <input
+                type="search"
+                autoComplete="off"
+                placeholder="Начните вводить название…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="mt-1.5 w-full max-w-md rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              />
+              {search.trim() ? (
+                <p className="mt-1 text-xs text-zinc-500">
+                  Найдено: {filteredProducts.length} из {products.length}
+                </p>
+              ) : null}
+            </div>
+
+            {filteredProducts.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-zinc-200 py-12 text-center text-sm text-zinc-500 dark:border-zinc-800">
+                По запросу «{search.trim()}» ничего не найдено
+              </p>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {filteredProducts.map((p) => {
+                  const img = assetUrl(p.imageUrl);
+                  const unavailable = p.stock <= 0;
+                  const inCart = qtyForProduct(cart, p.id);
+                  const maxAdd = p.stock - inCart;
+                  const canAdd = !unavailable && maxAdd > 0;
+                  const draft = draftQtyFor(p.id);
+                  const draftNum = Math.floor(
+                    Number(draft.trim().replace(",", ".")),
+                  );
+                  const draftOk =
+                    Number.isFinite(draftNum) &&
+                    draftNum >= 1 &&
+                    draftNum <= maxAdd;
+                  return (
+                    <article
+                      key={p.id}
+                      className={`flex flex-col overflow-hidden rounded-xl border bg-white shadow-sm dark:bg-zinc-950 ${
+                        unavailable
+                          ? "border-zinc-100 opacity-70 dark:border-zinc-800"
+                          : "border-zinc-200 dark:border-zinc-800"
+                      }`}
+                    >
+                      <div className="relative aspect-[4/3] w-full bg-zinc-100 dark:bg-zinc-900">
+                        {img ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={img}
+                            alt=""
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center text-xs text-zinc-400">
+                            Нет фото
+                          </div>
+                        )}
+                        {unavailable ? (
+                          <span className="absolute inset-0 flex items-center justify-center bg-black/40 text-xs font-medium text-white">
+                            Нет в наличии
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="flex flex-1 flex-col gap-2 p-3">
+                        <h2 className="line-clamp-2 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                          {p.name}
+                        </h2>
+                        <div className="flex items-end justify-between gap-2 text-sm text-zinc-600 dark:text-zinc-400">
+                          <span>{Number(p.price).toFixed(2)}</span>
+                          <span className="tabular-nums">Склад: {p.stock}</span>
+                        </div>
+                        {inCart > 0 ? (
+                          <p className="text-xs text-zinc-500">
+                            Уже в корзине: {inCart} шт. · можно ещё: {maxAdd}
+                          </p>
+                        ) : null}
+                        <label className="block text-xs text-zinc-600 dark:text-zinc-400">
+                          Количество
+                          <input
+                            type="number"
+                            min={1}
+                            max={Math.max(1, maxAdd)}
+                            disabled={!canAdd}
+                            value={draft}
+                            onChange={(e) =>
+                              setDraftQty(p.id, e.target.value)
+                            }
+                            className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm tabular-nums disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900"
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          disabled={!canAdd || !draftOk}
+                          onClick={() => addToCart(p)}
+                          className="mt-auto w-full rounded-md bg-zinc-900 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                        >
+                          {unavailable
+                            ? "Нет в наличии"
+                            : "Добавить в корзину"}
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
