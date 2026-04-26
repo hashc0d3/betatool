@@ -9,9 +9,14 @@ cd "$ROOT"
 DOMAIN="${CERTBOT_DOMAIN:-playbetatool.ru}"
 
 mkdir -p certbot/conf certbot/www
+chmod -R a+rX certbot/www 2>/dev/null || true
 
 echo "Запуск стека (HTTP, порт 80)…"
 docker compose up -d
+
+# Подхватить актуальный conf.d (после git pull) и проверить конфиг.
+docker compose exec -T nginx nginx -t
+docker compose exec -T nginx nginx -s reload 2>/dev/null || true
 
 echo "Запрос сертификата для $DOMAIN и www.$DOMAIN …"
 docker run --rm \
