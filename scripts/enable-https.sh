@@ -13,6 +13,7 @@ fi
 cp docker/nginx/templates/00-http-redirect.conf docker/nginx/conf.d/00-http.conf
 cp docker/nginx/templates/01-https.conf docker/nginx/conf.d/01-https.conf
 
-docker compose exec nginx nginx -t
-docker compose exec nginx nginx -s reload
+docker compose exec -T nginx nginx -t
+docker compose exec -T nginx nginx -s reload
 echo "HTTPS включён. Проверьте: https://playbetatool.ru"
+echo "После следующих git pull при смене nginx-шаблонов: ./scripts/sync-nginx-from-templates.sh"

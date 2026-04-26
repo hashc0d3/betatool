@@ -5,6 +5,9 @@
 # Let's Encrypt (не коммитить)
 certbot/
 
+# На сервере копируется из templates при enable-https / sync-nginx-from-templates
+docker/nginx/conf.d/01-https.conf
+
 # Dependencies & build
 node_modules/
 **/node_modules/
