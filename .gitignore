@@ -2,6 +2,9 @@
 /data/
 /uploads/
 
+# Let's Encrypt (не коммитить)
+certbot/
+
 # Dependencies & build
 node_modules/
 **/node_modules/

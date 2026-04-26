@@ -1,7 +1,6 @@
-# Развёртывание: скопируйте проект на сервер, затем: docker compose up -d --build
-# Сайт: http://playbetatool.ru (порт 80).
-# Данные SQLite и загрузки лежат в папках ./data и ./uploads рядом с compose — они НЕ удаляются
-# при пересборке образов. Не используйте `docker compose down -v` без нужды (ключ -v удаляет тома).
+# Развёртывание: docker compose up -d --build
+# HTTPS: после первого запуска на сервере — ./scripts/init-letsencrypt.sh (нужен CERTBOT_EMAIL)
+# Данные: ./data и ./uploads не удаляются при пересборке. Папка ./certbot — сертификаты (в .gitignore).
 
 services:
   backend:
@@ -12,7 +11,6 @@ services:
     environment:
       PORT: "4001"
       NODE_ENV: production
-      # Несколько origin через запятую (сайт, IP, локальная отладка)
       FRONTEND_ORIGIN: "https://playbetatool.ru,http://playbetatool.ru,http://www.playbetatool.ru,https://www.playbetatool.ru,http://155.117.46.144,http://localhost:3000"
     volumes:
       - ./data:/app/data
@@ -35,8 +33,11 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
+      - "443:443"
     volumes:
-      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+      - ./certbot/www:/var/www/certbot:ro
     depends_on:
       - frontend
       - backend
