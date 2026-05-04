@@ -14,6 +14,12 @@ export class Product {
   @Column('int', { default: 0 })
   stock: number;
 
+  @Column({ default: 'default' })
+  category: string;
+
   @Column({ type: 'varchar', nullable: true })
   imageUrl: string | null;
+
+  @Column('boolean', { default: false })
+  isPersonal: boolean;
 }

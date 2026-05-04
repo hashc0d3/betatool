@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Склад компьютерного клуба",
-  description: "Учёт товаров, продажи и отчёты",
+  title: "Play Beta",
+  description: "Учёт склада компьютерного клуба Play Beta",
 };
 
 export default function RootLayout({

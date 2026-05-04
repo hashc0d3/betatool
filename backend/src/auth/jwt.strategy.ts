@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { Request } from 'express';
 import { ExtractJwt, Strategy } from 'passport-jwt';
+import type { AuthRole } from './auth.service';
 
 function jwtSecret(): string {
   return (
@@ -30,7 +31,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     });
   }
 
-  validate(payload: { sub: string }) {
-    return { login: payload.sub };
+  validate(payload: { sub: string; role?: AuthRole }) {
+    return { login: payload.sub, role: payload.role ?? 'admin' };
   }
 }

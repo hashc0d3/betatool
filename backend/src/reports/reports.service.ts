@@ -32,6 +32,8 @@ type ReportLine = {
   productName: string;
   unitPrice: number;
   quantity: number;
+  isPersonal: boolean;
+  recipientName: string | null;
   createdAt: Date;
   amount: number;
 };
@@ -59,6 +61,7 @@ export class ReportsService {
     const sales = await this.salesRepo
       .createQueryBuilder('s')
       .where('s.createdAt >= :start AND s.createdAt <= :end', { start, end })
+      .andWhere('s.deletedAt IS NULL')
       .orderBy('s.createdAt', 'ASC')
       .getMany();
 
@@ -84,6 +87,7 @@ export class ReportsService {
         from: rangeStart,
         to: rangeEnd,
       })
+      .andWhere('s.deletedAt IS NULL')
       .orderBy('s.createdAt', 'ASC')
       .getMany();
 
@@ -121,9 +125,7 @@ export class ReportsService {
 
     const grandTotalQuantity = sales.reduce((a, s) => a + s.quantity, 0);
     const grandTotalAmount =
-      Math.round(
-        sales.reduce((a, s) => a + lineAmount(s), 0) * 100,
-      ) / 100;
+      Math.round(sales.reduce((a, s) => a + lineAmount(s), 0) * 100) / 100;
 
     return {
       from: fromStr,
@@ -140,6 +142,8 @@ export class ReportsService {
       productName: s.productName,
       unitPrice: s.unitPrice,
       quantity: s.quantity,
+      isPersonal: s.isPersonal,
+      recipientName: s.recipientName,
       createdAt: s.createdAt,
       amount: lineAmount(s),
     };
@@ -149,7 +153,7 @@ export class ReportsService {
   async exportStockXlsx(): Promise<Buffer> {
     const overview = await this.stockOverview();
     const wb = new ExcelJS.Workbook();
-    wb.creator = 'Club stock';
+    wb.creator = 'Play Beta stock';
     const ws = wb.addWorksheet('Остатки', {
       properties: { defaultRowHeight: 18 },
     });
@@ -194,18 +198,13 @@ export class ReportsService {
       `Всего шт.: ${rep.totalQuantity}; сумма: ${rep.totalAmount.toFixed(2)}`,
     ]);
     ws.addRow([]);
-    ws.addRow([
-      'Дата и время',
-      'Товар',
-      'Цена',
-      'Кол-во',
-      'Сумма',
-    ]);
+    ws.addRow(['Дата и время', 'Товар', 'Кто взял', 'Цена', 'Кол-во', 'Сумма']);
     ws.getRow(4).font = { bold: true };
     for (const l of rep.lines) {
       ws.addRow([
         new Date(l.createdAt),
         l.productName,
+        l.recipientName ?? '',
         l.unitPrice,
         l.quantity,
         l.amount,
@@ -216,6 +215,7 @@ export class ReportsService {
     ws.columns = [
       { width: 18 },
       { width: 40 },
+      { width: 24 },
       { width: 12 },
       { width: 10 },
       { width: 12 },
@@ -228,7 +228,9 @@ export class ReportsService {
   async exportRangeXlsx(fromStr: string, toStr: string): Promise<Buffer> {
     const rep = await this.reportRange(fromStr, toStr);
     const wb = new ExcelJS.Workbook();
-    const sum = wb.addWorksheet('По дням', { properties: { defaultRowHeight: 18 } });
+    const sum = wb.addWorksheet('По дням', {
+      properties: { defaultRowHeight: 18 },
+    });
     sum.addRow([`Период: ${rep.from} — ${rep.to}`]);
     sum.getRow(1).font = { bold: true };
     sum.addRow([
@@ -241,11 +243,14 @@ export class ReportsService {
       sum.addRow([d.date, d.totalQuantity, d.totalAmount]);
     }
 
-    const det = wb.addWorksheet('Детали', { properties: { defaultRowHeight: 18 } });
+    const det = wb.addWorksheet('Детали', {
+      properties: { defaultRowHeight: 18 },
+    });
     det.addRow([
       'Дата и время',
       'Календарный день',
       'Товар',
+      'Кто взял',
       'Цена',
       'Кол-во',
       'Сумма',
@@ -257,6 +262,7 @@ export class ReportsService {
           new Date(l.createdAt),
           d.date,
           l.productName,
+          l.recipientName ?? '',
           l.unitPrice,
           l.quantity,
           l.amount,
@@ -268,6 +274,7 @@ export class ReportsService {
       { width: 18 },
       { width: 14 },
       { width: 36 },
+      { width: 24 },
       { width: 10 },
       { width: 8 },
       { width: 12 },

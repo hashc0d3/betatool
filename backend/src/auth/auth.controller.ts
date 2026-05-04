@@ -1,8 +1,23 @@
-import { Body, Controller, HttpCode, Post, Res } from '@nestjs/common';
-import type { Response } from 'express';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Post,
+  Req,
+  Res,
+} from '@nestjs/common';
+import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { Public } from './public.decorator';
+
+type AuthenticatedRequest = Request & {
+  user?: {
+    login: string;
+    role: string;
+  };
+};
 
 @Controller('auth')
 export class AuthController {
@@ -39,5 +54,10 @@ export class AuthController {
       sameSite: 'lax',
     });
     return { ok: true };
+  }
+
+  @Get('me')
+  me(@Req() req: AuthenticatedRequest) {
+    return req.user;
   }
 }

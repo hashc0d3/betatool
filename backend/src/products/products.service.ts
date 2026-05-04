@@ -23,8 +23,13 @@ export class ProductsService {
   private mapProduct(p: Product) {
     return {
       ...p,
+      category: p.category || 'default',
       imageUrl: this.toPublicUrl(p.imageUrl),
     };
+  }
+
+  private normalizeCategory(category: string | null | undefined): string {
+    return category?.trim() || 'default';
   }
 
   async findAll() {
@@ -44,23 +49,24 @@ export class ProductsService {
       name: dto.name,
       price: dto.price,
       stock: dto.stock,
+      category: this.normalizeCategory(dto.category),
+      isPersonal: dto.isPersonal ?? false,
       imageUrl,
     });
     const saved = await this.productsRepo.save(entity);
     return this.mapProduct(saved);
   }
 
-  async update(
-    id: number,
-    dto: UpdateProductDto,
-    newFilename?: string | null,
-  ) {
+  async update(id: number, dto: UpdateProductDto, newFilename?: string | null) {
     const p = await this.productsRepo.findOne({ where: { id } });
     if (!p) throw new NotFoundException('Товар не найден');
 
     if (dto.name !== undefined) p.name = dto.name;
     if (dto.price !== undefined) p.price = dto.price;
     if (dto.stock !== undefined) p.stock = dto.stock;
+    if (dto.category !== undefined)
+      p.category = this.normalizeCategory(dto.category);
+    if (dto.isPersonal !== undefined) p.isPersonal = dto.isPersonal;
 
     if (newFilename) {
       if (p.imageUrl?.startsWith('/uploads/products/')) {
