@@ -41,6 +41,12 @@ export class ReportsController {
     return this.reportsService.stockOverview();
   }
 
+  /** Незакрытые отложенные платежи (долги) */
+  @Get('deferred')
+  deferred() {
+    return this.reportsService.deferredOverview();
+  }
+
   /** Продажи за один календарный день */
   @Get('day')
   day(@Query('date') date: string) {

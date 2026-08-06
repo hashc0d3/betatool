@@ -29,6 +29,9 @@ type CartLine = {
   recipientName: string | null;
 };
 
+/** Виртуальная категория: показать все товары */
+const ALL_PRODUCTS = "__all__";
+
 function qtyForProduct(cart: CartLine[], productId: number): number {
   return cart
     .filter((l) => l.productId === productId)
@@ -38,7 +41,7 @@ function qtyForProduct(cart: CartLine[], productId: number): number {
 export default function SalePage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState("default");
+  const [selectedCategory, setSelectedCategory] = useState(ALL_PRODUCTS);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [search, setSearch] = useState("");
   /** Количество к добавлению с карточки (строка для input) */
@@ -52,10 +55,15 @@ export default function SalePage() {
     Record<number, boolean>
   >({});
   const [cartOpen, setCartOpen] = useState(false);
+  const [deferredOpen, setDeferredOpen] = useState(false);
+  const [debtorName, setDebtorName] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const categoryLabel =
+    selectedCategory === ALL_PRODUCTS ? "Все товары" : selectedCategory;
 
   const load = useCallback(async () => {
     setError(null);
@@ -77,8 +85,11 @@ export default function SalePage() {
     try {
       const list = await apiGet<Category[]>("/categories");
       setCategories(list);
-      if (!list.some((c) => c.name === selectedCategory)) {
-        setSelectedCategory(list[0]?.name ?? "default");
+      if (
+        selectedCategory !== ALL_PRODUCTS &&
+        !list.some((c) => c.name === selectedCategory)
+      ) {
+        setSelectedCategory(ALL_PRODUCTS);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Ошибка загрузки категорий");
@@ -89,15 +100,6 @@ export default function SalePage() {
     void loadCategories();
   }, [loadCategories]);
 
-  useEffect(() => {
-    if (!cartOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setCartOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [cartOpen]);
-
   const productById = useMemo(() => {
     const m = new Map<number, Product>();
     for (const p of products) m.set(p.id, p);
@@ -107,8 +109,10 @@ export default function SalePage() {
   const filteredProducts = useMemo(() => {
     const q = search.trim().toLowerCase();
     return products.filter((p) => {
-      const category = p.category || "default";
-      if (category !== selectedCategory) return false;
+      if (selectedCategory !== ALL_PRODUCTS) {
+        const category = p.category || "default";
+        if (category !== selectedCategory) return false;
+      }
       if (!q) return true;
       return p.name.toLowerCase().includes(q);
     });
@@ -232,7 +236,7 @@ export default function SalePage() {
     };
   }, [cart]);
 
-  async function checkout() {
+  const checkout = useCallback(async () => {
     if (cart.length === 0) return;
     setMessage(null);
     setError(null);
@@ -264,35 +268,92 @@ export default function SalePage() {
     } finally {
       setSubmitting(false);
     }
+  }, [cart, load]);
+
+  useEffect(() => {
+    if (!cartOpen && !deferredOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (deferredOpen) {
+          setDeferredOpen(false);
+          return;
+        }
+        setCartOpen(false);
+        return;
+      }
+      if (e.key !== "Enter" || e.repeat) return;
+      if (deferredOpen || !cartOpen || submitting || cart.length === 0) return;
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      // Не перехватывать Enter в полях ввода (поиск, кол-во и т.п.)
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      e.preventDefault();
+      void checkout();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [cartOpen, deferredOpen, submitting, cart.length, checkout]);
+
+  async function submitDeferred() {
+    if (cart.length === 0) return;
+    const name = debtorName.trim();
+    if (!name) {
+      setError("Укажите имя кто взял товар");
+      return;
+    }
+    setMessage(null);
+    setError(null);
+    setSubmitting(true);
+    try {
+      await apiPostJson("/sales/deferred", {
+        debtorName: name,
+        items: cart.map((line) => ({
+          productId: line.productId,
+          quantity: line.quantity,
+          recipientName: line.recipientName ?? undefined,
+          isPersonal: line.isPersonal,
+        })),
+      });
+      setCart([]);
+      setDebtorName("");
+      setDeferredOpen(false);
+      setMessage("Отложенный платёж создан, остатки обновлены");
+      await load();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Ошибка создания отложенного платежа",
+      );
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-semibold tracking-tight text-white">
+        <h1 className="font-display text-3xl font-semibold tracking-tight piton-title">
           Регистрация продажи
         </h1>
-        <p className="mt-2 text-sm text-cyan-100/70">
+        <p className="mt-2 text-sm piton-muted">
           Корзина — сайдбар справа; при добавлении товара открывается сама. Её
           можно скрыть кнопкой «×» или снова открыть с полоски справа.
         </p>
       </div>
 
       {message ? (
-        <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">
+        <p className="piton-ok px-3 py-2 text-sm">
           {message}
         </p>
       ) : null}
       {error ? (
-        <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-800 dark:bg-red-950 dark:text-red-200">
+        <p className="piton-err px-3 py-2 text-sm">
           {error}
         </p>
       ) : null}
 
       {loading ? (
-        <p className="text-sm text-zinc-500">Загрузка…</p>
+        <p className="text-sm piton-muted">Загрузка…</p>
       ) : products.length === 0 ? (
-        <p className="text-sm text-zinc-500">
+        <p className="text-sm piton-muted">
           Нет товаров. Сначала добавьте их в разделе «Товары».
         </p>
       ) : (
@@ -300,7 +361,7 @@ export default function SalePage() {
           {cartOpen ? (
             <div
               role="presentation"
-              className="fixed inset-0 z-40 bg-zinc-950/40 backdrop-blur-[1px] lg:hidden"
+              className="fixed inset-0 z-40 bg-[#04150c]/60 backdrop-blur-[1px] lg:hidden"
               onClick={() => setCartOpen(false)}
             />
           ) : null}
@@ -309,13 +370,13 @@ export default function SalePage() {
             <button
               type="button"
               onClick={() => setCartOpen(true)}
-              className="fixed z-50 flex flex-col items-center justify-center gap-1 border border-zinc-200 bg-white text-zinc-900 shadow-lg transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800 max-lg:bottom-6 max-lg:right-4 max-lg:rounded-full max-lg:px-4 max-lg:py-3 lg:right-0 lg:top-[45%] lg:w-12 lg:-translate-y-1/2 lg:rounded-l-xl lg:rounded-r-none lg:border-r-0 lg:px-1 lg:py-8"
+              className="fixed z-50 flex flex-col items-center justify-center gap-1 border border-lime-400/25 bg-[#0a2414] text-lime-100 shadow-lg transition hover:bg-[#0d2e1a] max-lg:bottom-6 max-lg:right-4 max-lg:rounded-full max-lg:px-4 max-lg:py-3 lg:right-0 lg:top-[45%] lg:w-12 lg:-translate-y-1/2 lg:rounded-l-xl lg:rounded-r-none lg:border-r-0 lg:px-1 lg:py-8"
             >
               <span className="text-xs font-semibold tracking-tight lg:[writing-mode:vertical-rl] lg:rotate-180">
                 Корзина
               </span>
               {cartTotals.qty > 0 ? (
-                <span className="rounded-full bg-zinc-900 px-2 py-0.5 text-[11px] font-bold text-white tabular-nums dark:bg-zinc-100 dark:text-zinc-900">
+                <span className="rounded-full bg-lime-400 px-2 py-0.5 text-[11px] font-bold text-green-950 tabular-nums">
                   {cartTotals.qty}
                 </span>
               ) : null}
@@ -323,16 +384,16 @@ export default function SalePage() {
           ) : null}
 
           <aside
-            className={`fixed bottom-0 right-0 top-0 z-50 flex w-[min(100vw,380px)] flex-col border-l border-zinc-200 bg-white shadow-2xl transition-transform duration-300 ease-out dark:border-zinc-800 dark:bg-zinc-950 ${
+            className={`fixed bottom-0 right-0 top-0 z-50 flex w-[min(100vw,380px)] flex-col border-l border-lime-400/20 bg-[#0a2414] shadow-2xl transition-transform duration-300 ease-out ${
               cartOpen ? "translate-x-0" : "translate-x-full"
             }`}
           >
-            <div className="flex shrink-0 items-start justify-between gap-2 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
+            <div className="flex shrink-0 items-start justify-between gap-2 border-b border-lime-400/15 px-4 py-3">
               <div className="min-w-0">
-                <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                <h2 className="text-sm font-semibold piton-title">
                   Корзина
                 </h2>
-                <p className="mt-0.5 text-xs text-zinc-500">
+                <p className="mt-0.5 text-xs piton-muted">
                   {cart.length === 0
                     ? "Пока пусто"
                     : `${cartTotals.qty} шт. · ${cartTotals.sum.toFixed(2)}`}
@@ -341,7 +402,7 @@ export default function SalePage() {
               <button
                 type="button"
                 onClick={() => setCartOpen(false)}
-                className="shrink-0 rounded-md p-2 text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                className="shrink-0 rounded-md p-2 piton-muted transition hover:bg-lime-400/10 hover:text-lime-50"
                 aria-label="Скрыть корзину"
               >
                 <span className="text-lg leading-none">×</span>
@@ -350,7 +411,7 @@ export default function SalePage() {
 
             <div className="min-h-0 flex-1 overflow-y-auto p-3">
               {cart.length === 0 ? (
-                <p className="py-8 text-center text-sm text-zinc-500">
+                <p className="py-8 text-center text-sm piton-muted">
                   Укажите количество на карточке и нажмите «Добавить в корзину»
                 </p>
               ) : (
@@ -364,9 +425,9 @@ export default function SalePage() {
                     return (
                       <li
                         key={line.lineId}
-                        className="flex gap-3 rounded-lg border border-zinc-100 bg-zinc-50/80 p-2 dark:border-zinc-800 dark:bg-zinc-900/50"
+                        className="flex gap-3 rounded-lg border border-lime-400/15 bg-[#071a0f] p-2"
                       >
-                        <div className="h-14 w-14 shrink-0 overflow-hidden rounded-md bg-zinc-200 dark:bg-zinc-800">
+                        <div className="h-14 w-14 shrink-0 overflow-hidden rounded-md bg-[#071a0f]">
                           {img ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
@@ -375,21 +436,21 @@ export default function SalePage() {
                               className="h-full w-full object-cover"
                             />
                           ) : (
-                            <div className="flex h-full items-center justify-center text-[10px] text-zinc-400">
+                            <div className="flex h-full items-center justify-center text-[10px] piton-muted">
                               —
                             </div>
                           )}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p className="line-clamp-2 text-xs font-medium text-zinc-900 dark:text-zinc-100">
+                          <p className="line-clamp-2 text-xs font-medium piton-title">
                             {line.name}
                           </p>
-                          <p className="mt-0.5 text-xs text-zinc-500">
+                          <p className="mt-0.5 text-xs piton-muted">
                             {Number(line.unitPrice).toFixed(2)} ×{" "}
                             {line.quantity}
                           </p>
                           {line.recipientName ? (
-                            <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-300">
+                            <p className="mt-0.5 text-xs text-lime-300">
                               Кто взял: {line.recipientName}
                             </p>
                           ) : null}
@@ -397,21 +458,21 @@ export default function SalePage() {
                             <button
                               type="button"
                               aria-label="Меньше"
-                              className="flex h-7 w-7 items-center justify-center rounded border border-zinc-300 text-sm dark:border-zinc-600"
+                              className="flex h-7 w-7 items-center justify-center rounded border border-lime-400/25 text-sm text-lime-100"
                               onClick={() =>
                                 setLineQuantity(line.lineId, line.quantity - 1)
                               }
                             >
                               −
                             </button>
-                            <span className="min-w-[1.5rem] text-center text-sm tabular-nums">
+                            <span className="min-w-[1.5rem] text-center text-sm tabular-nums text-lime-50">
                               {line.quantity}
                             </span>
                             <button
                               type="button"
                               aria-label="Больше"
                               disabled={line.quantity >= max}
-                              className="flex h-7 w-7 items-center justify-center rounded border border-zinc-300 text-sm disabled:opacity-40 dark:border-zinc-600"
+                              className="flex h-7 w-7 items-center justify-center rounded border border-lime-400/25 text-sm text-lime-100 disabled:opacity-40"
                               onClick={() =>
                                 setLineQuantity(line.lineId, line.quantity + 1)
                               }
@@ -420,7 +481,7 @@ export default function SalePage() {
                             </button>
                             <button
                               type="button"
-                              className="ml-auto text-xs text-red-600 hover:underline dark:text-red-400"
+                              className="ml-auto text-xs text-red-300 hover:underline"
                               onClick={() => removeLine(line.lineId)}
                             >
                               Удалить
@@ -434,30 +495,106 @@ export default function SalePage() {
               )}
             </div>
 
-            <div className="shrink-0 border-t border-zinc-200 p-3 dark:border-zinc-800">
+            <div className="shrink-0 space-y-2 border-t border-lime-400/15 p-3">
               <button
                 type="button"
                 disabled={submitting || cart.length === 0}
                 onClick={() => void checkout()}
-                className="w-full rounded-md bg-zinc-900 py-2.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                className="w-full piton-btn w-full py-2.5 text-sm"
               >
                 {submitting ? "Оформление…" : "Оформить продажу"}
               </button>
+              <button
+                type="button"
+                disabled={submitting || cart.length === 0}
+                onClick={() => {
+                  setError(null);
+                  setDeferredOpen(true);
+                }}
+                className="piton-btn-ghost w-full py-2.5 text-sm font-medium"
+              >
+                Отложенный платёж
+              </button>
             </div>
           </aside>
+
+          {deferredOpen ? (
+            <div
+              className="fixed inset-0 z-[60] flex items-center justify-center bg-[#04150c]/70 p-4 backdrop-blur-sm"
+              role="presentation"
+              onClick={() => {
+                if (!submitting) setDeferredOpen(false);
+              }}
+            >
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="deferred-title"
+                className="piton-card w-full max-w-md p-5"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <h2
+                  id="deferred-title"
+                  className="text-lg font-semibold text-white"
+                >
+                  Отложенный платёж
+                </h2>
+                <p className="mt-1 text-sm piton-muted">
+                  Товар спишется со склада, сумма попадёт в отчёт после оплаты.
+                  Сумма: {cartTotals.sum.toFixed(2)} · {cartTotals.qty} шт.
+                </p>
+                <label className="mt-4 block text-sm font-medium piton-label">
+                  Имя кто взял товар
+                  <input
+                    autoFocus
+                    type="text"
+                    value={debtorName}
+                    onChange={(e) => setDebtorName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void submitDeferred();
+                      }
+                    }}
+                    placeholder="Например, Иван"
+                    className="mt-1.5 w-full piton-input px-3 py-2 text-sm text-white"
+                  />
+                </label>
+                <div className="mt-5 flex gap-2">
+                  <button
+                    type="button"
+                    disabled={submitting}
+                    onClick={() => setDeferredOpen(false)}
+                    className="piton-btn-ghost flex-1 px-3 py-2 text-sm"
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    type="button"
+                    disabled={submitting || !debtorName.trim()}
+                    onClick={() => void submitDeferred()}
+                    className="piton-btn flex-1 px-3 py-2 text-sm"
+                  >
+                    {submitting ? "Сохранение…" : "Создать"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           <div
             className={`space-y-4 pr-0 max-lg:pb-24 ${cartOpen ? "lg:pr-0" : "lg:pr-14"}`}
           >
             <div>
               <div className="flex flex-wrap gap-3">
-                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                <label className="block text-sm font-medium piton-label">
                   Категория
                   <select
                     value={selectedCategory}
                     onChange={(e) => setSelectedCategory(e.target.value)}
-                    className="mt-1.5 block w-56 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                    className="mt-1.5 block w-56 piton-input px-3 py-2 text-sm"
                   >
+                    <option value={ALL_PRODUCTS}>Все товары</option>
                     {categories.map((c) => (
                       <option key={c.id} value={c.name}>
                         {c.name}
@@ -465,7 +602,7 @@ export default function SalePage() {
                     ))}
                   </select>
                 </label>
-                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                <label className="block text-sm font-medium piton-label">
                   Поиск по товарам
                   <input
                     type="search"
@@ -473,19 +610,21 @@ export default function SalePage() {
                     placeholder="Начните вводить название…"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    className="mt-1.5 block w-full min-w-[260px] max-w-md rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                    className="mt-1.5 block w-full min-w-[260px] max-w-md piton-input px-3 py-2 text-sm"
                   />
                 </label>
               </div>
-              <p className="mt-1 text-xs text-zinc-500">
-                Категория: {selectedCategory} · найдено:{" "}
+              <p className="mt-1 text-xs piton-muted">
+                Категория: {categoryLabel} · найдено:{" "}
                 {filteredProducts.length}
               </p>
             </div>
 
             {filteredProducts.length === 0 ? (
-              <p className="rounded-lg border border-dashed border-zinc-200 py-12 text-center text-sm text-zinc-500 dark:border-zinc-800">
-                В категории «{selectedCategory}» ничего не найдено
+              <p className="rounded-lg border border-dashed border-lime-400/20 py-12 text-center text-sm piton-muted">
+                {selectedCategory === ALL_PRODUCTS
+                  ? "Ничего не найдено"
+                  : `В категории «${selectedCategory}» ничего не найдено`}
               </p>
             ) : (
               <div className="grid auto-rows-fr gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -509,17 +648,17 @@ export default function SalePage() {
                   return (
                     <article
                       key={p.id}
-                      className={`flex h-full min-h-[26rem] flex-col overflow-hidden rounded-xl border bg-white shadow-sm dark:bg-zinc-950 ${
+                      className={`flex h-full min-h-[26rem] flex-col overflow-hidden piton-card ${
                         unavailable
-                          ? "border-zinc-100 opacity-70 dark:border-zinc-800"
-                          : "border-zinc-200 dark:border-zinc-800"
+                          ? "opacity-70"
+                          : ""
                       }`}
                     >
                       <button
                         type="button"
                         disabled={!canAdd || !draftOk || !recipientOk}
                         onClick={() => addToCart(p)}
-                        className="relative h-48 w-full shrink-0 overflow-hidden bg-zinc-100 text-left transition hover:brightness-95 disabled:cursor-not-allowed disabled:hover:brightness-100 dark:bg-zinc-900"
+                        className="relative h-48 w-full shrink-0 overflow-hidden bg-[#071a0f] text-left transition hover:brightness-95 disabled:cursor-not-allowed disabled:hover:brightness-100"
                         aria-label={`Добавить ${p.name} в корзину`}
                       >
                         {img ? (
@@ -530,7 +669,7 @@ export default function SalePage() {
                             className="h-full w-full object-cover"
                           />
                         ) : (
-                          <div className="flex h-full w-full items-center justify-center text-xs text-zinc-400">
+                          <div className="flex h-full w-full items-center justify-center text-xs piton-muted">
                             Нет фото
                           </div>
                         )}
@@ -541,17 +680,17 @@ export default function SalePage() {
                         ) : null}
                       </button>
                       <div className="flex flex-1 flex-col gap-2 p-3">
-                        <h2 className="line-clamp-2 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                        <h2 className="line-clamp-2 text-sm font-semibold piton-title">
                           {p.name}
                         </h2>
-                        <span className="w-fit rounded-full bg-cyan-50 px-2 py-0.5 text-xs text-cyan-800 dark:bg-cyan-950 dark:text-cyan-200">
+                        <span className="w-fit piton-chip px-2 py-0.5 text-xs">
                           {p.category || "default"}
                         </span>
-                        <div className="flex items-end justify-between gap-2 text-sm text-zinc-600 dark:text-zinc-400">
+                        <div className="flex items-end justify-between gap-2 text-sm piton-label">
                           <span>{Number(p.price).toFixed(2)}</span>
                           <span className="tabular-nums">Склад: {p.stock}</span>
                         </div>
-                        <label className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
+                        <label className="flex items-center gap-2 text-xs piton-label">
                           <input
                             type="checkbox"
                             disabled={p.isPersonal || !canAdd}
@@ -559,22 +698,22 @@ export default function SalePage() {
                             onChange={(e) =>
                               setPersonal(p.id, e.target.checked)
                             }
-                            className="h-4 w-4 rounded border-zinc-300 disabled:opacity-60"
+                            className="h-4 w-4 rounded border-lime-400/40 accent-lime-400 disabled:opacity-60"
                           />
                           <span>Персонал</span>
                           {p.isPersonal ? (
-                            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+                            <span className="piton-chip px-2 py-0.5 text-[11px] font-medium">
                               обязательно
                             </span>
                           ) : null}
                         </label>
                         {inCart > 0 ? (
-                          <p className="text-xs text-zinc-500">
+                          <p className="text-xs piton-muted">
                             Уже в корзине: {inCart} шт. · можно ещё: {maxAdd}
                           </p>
                         ) : null}
                         {personalSelected ? (
-                          <label className="block text-xs text-zinc-600 dark:text-zinc-400">
+                          <label className="block text-xs piton-label">
                             Имя кто взял
                             <input
                               type="text"
@@ -583,12 +722,12 @@ export default function SalePage() {
                               onChange={(e) =>
                                 setRecipient(p.id, e.target.value)
                               }
-                              className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900"
+                              className="mt-1 w-full piton-input px-2 py-1.5 text-sm"
                               placeholder="Например: Иван"
                             />
                           </label>
                         ) : null}
-                        <label className="block text-xs text-zinc-600 dark:text-zinc-400">
+                        <label className="block text-xs piton-label">
                           Количество
                           <input
                             type="number"
@@ -597,14 +736,14 @@ export default function SalePage() {
                             disabled={!canAdd}
                             value={draft}
                             onChange={(e) => setDraftQty(p.id, e.target.value)}
-                            className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm tabular-nums disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900"
+                            className="mt-1 w-full piton-input px-2 py-1.5 text-sm tabular-nums"
                           />
                         </label>
                         <button
                           type="button"
                           disabled={!canAdd || !draftOk || !recipientOk}
                           onClick={() => addToCart(p)}
-                          className="mt-auto w-full rounded-md bg-zinc-900 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                          className="mt-auto w-full piton-btn w-full py-2 text-sm disabled:cursor-not-allowed"
                         >
                           {unavailable ? "Нет в наличии" : "Добавить в корзину"}
                         </button>

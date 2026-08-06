@@ -52,6 +52,17 @@ export async function apiPostJson<T>(path: string, body: unknown): Promise<T> {
   return r.json() as Promise<T>;
 }
 
+export async function apiPatchJson<T>(path: string, body: unknown): Promise<T> {
+  const r = await fetch(apiUrl(path), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    ...fetchOpts,
+  });
+  if (!r.ok) throw new Error(await parseError(r));
+  return r.json() as Promise<T>;
+}
+
 export async function apiPostForm<T>(path: string, form: FormData): Promise<T> {
   const r = await fetch(apiUrl(path), {
     method: "POST",

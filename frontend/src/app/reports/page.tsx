@@ -1,9 +1,17 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiDelete, apiDownloadFile, apiGet } from "@/lib/api";
 
 type StockRow = { id: number; name: string; price: number; stock: number };
+
+type DeferredOverview = {
+  totalAmount: number;
+  totalQuantity: number;
+  debtorCount: number;
+  lineCount: number;
+};
 
 type ReportLine = {
   id: number;
@@ -12,7 +20,10 @@ type ReportLine = {
   quantity: number;
   isPersonal: boolean;
   recipientName: string | null;
+  debtorName?: string | null;
+  isDeferred?: boolean;
   createdAt: string;
+  paidAt?: string | null;
   amount: number;
 };
 
@@ -54,6 +65,7 @@ export default function ReportsPage() {
     items: StockRow[];
     totalQuantity: number;
   } | null>(null);
+  const [deferred, setDeferred] = useState<DeferredOverview | null>(null);
   const [dayDate, setDayDate] = useState(todayInputValue);
   const [dayReport, setDayReport] = useState<DayReport | null>(null);
   const [rangeFrom, setRangeFrom] = useState(todayInputValue);
@@ -85,9 +97,19 @@ export default function ReportsPage() {
     }
   }, []);
 
+  const loadDeferred = useCallback(async () => {
+    try {
+      const d = await apiGet<DeferredOverview>("/reports/deferred");
+      setDeferred(d);
+    } catch {
+      setDeferred(null);
+    }
+  }, []);
+
   useEffect(() => {
     void loadStock();
-  }, [loadStock]);
+    void loadDeferred();
+  }, [loadStock, loadDeferred]);
 
   useEffect(() => {
     async function loadCurrentUser() {
@@ -163,7 +185,7 @@ export default function ReportsPage() {
     setDeleteBusy(id);
     try {
       await apiDelete(`/sales/${id}`);
-      await Promise.all([loadStock(), loadDay(), loadRange()]);
+      await Promise.all([loadStock(), loadDay(), loadRange(), loadDeferred()]);
       if (deletedSales) await loadDeletedSales();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Не удалось удалить продажу");
@@ -192,27 +214,53 @@ export default function ReportsPage() {
   return (
     <div className="space-y-10">
       <div>
-        <h1 className="text-3xl font-semibold tracking-tight text-white">
+        <h1 className="font-display text-3xl font-semibold tracking-tight piton-title">
           Отчёты
         </h1>
-        <p className="mt-2 text-sm text-cyan-100/70">
-          Остатки по складу, продажи за день и за период (без фото). Выгрузка в
-          Excel — кнопки у каждого блока.
+        <p className="mt-2 text-sm piton-muted">
+          Остатки по складу, продажи за день и за период (без фото). Неоплаченные
+          отложенные платежи в выручку не входят — только после «Оплачен».
+          Выгрузка в Excel — кнопки у каждого блока.
         </p>
       </div>
 
       {err ? (
-        <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-800 dark:bg-red-950 dark:text-red-200">
+        <p className="piton-err px-3 py-2 text-sm">
           {err}
         </p>
       ) : null}
 
-      <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+      {deferred ? (
+        <section className="rounded-xl border border-lime-400/25 bg-lime-400/10 p-4 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-lime-50">
+                Отложенные платежи (долги)
+              </h2>
+              <p className="mt-1 text-sm text-lime-100/80">
+                {deferred.debtorCount} чел. · {deferred.lineCount} поз. ·{" "}
+                {deferred.totalQuantity} шт. · сумма долга{" "}
+                <span className="font-semibold tabular-nums">
+                  {deferred.totalAmount.toFixed(2)}
+                </span>
+              </p>
+            </div>
+            <Link
+              href="/deferred"
+              className="rounded-md border border-lime-300/40 bg-lime-300/15 px-3 py-1.5 text-xs font-medium text-lime-50 hover:bg-lime-300/25"
+            >
+              Открыть список
+            </Link>
+          </div>
+        </section>
+      ) : null}
+
+      <section className="piton-card p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <button
             type="button"
             onClick={() => setStockOpen((v) => !v)}
-            className="flex items-center gap-2 text-left text-sm font-semibold text-zinc-900 dark:text-zinc-100"
+            className="flex items-center gap-2 text-left text-sm font-semibold piton-title"
           >
             <span>{stockOpen ? "▾" : "▸"}</span>
             Количество товаров на складе
@@ -229,7 +277,7 @@ export default function ReportsPage() {
                     "ostatki.xlsx",
                   )
                 }
-                className="shrink-0 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                className="piton-btn-ghost shrink-0 px-3 py-1.5 text-xs font-medium"
               >
                 {exportBusy === "stock" ? "Файл…" : "Excel"}
               </button>
@@ -237,25 +285,25 @@ export default function ReportsPage() {
             <button
               type="button"
               onClick={() => setStockOpen((v) => !v)}
-              className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-800 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+              className="piton-btn-ghost px-3 py-1.5 text-xs font-medium"
             >
               {stockOpen ? "Скрыть" : "Открыть"}
             </button>
           </div>
         </div>
         {stockOpen && loading ? (
-          <p className="mt-2 text-sm text-zinc-500">Загрузка…</p>
+          <p className="mt-2 text-sm piton-muted">Загрузка…</p>
         ) : stockOpen && stock ? (
           <>
-            <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+            <p className="mt-2 text-sm piton-label">
               Всего единиц на складе:{" "}
-              <span className="font-medium text-zinc-900 dark:text-zinc-100">
+              <span className="font-medium piton-title">
                 {stock.totalQuantity}
               </span>
             </p>
             <div className="mt-3 overflow-x-auto">
               <table className="w-full min-w-[480px] text-left text-sm">
-                <thead className="text-zinc-500 dark:text-zinc-400">
+                <thead className="piton-muted">
                   <tr>
                     <th className="py-2 pr-4 font-medium">Наименование</th>
                     <th className="py-2 pr-4 font-medium">Цена</th>
@@ -266,7 +314,7 @@ export default function ReportsPage() {
                   {stock.items.map((r) => (
                     <tr
                       key={r.id}
-                      className="border-t border-zinc-100 dark:border-zinc-800"
+                      className="piton-row"
                     >
                       <td className="py-2 pr-4">{r.name}</td>
                       <td className="py-2 pr-4">
@@ -282,17 +330,17 @@ export default function ReportsPage() {
         ) : null}
       </section>
 
-      <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+      <section className="piton-card p-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div className="flex flex-wrap items-end gap-3">
-            <h2 className="w-full text-sm font-semibold text-zinc-900 dark:text-zinc-100 sm:w-auto">
+            <h2 className="w-full text-sm font-semibold piton-title sm:w-auto">
               Отчёт за день
             </h2>
             <label className="text-sm">
-              <span className="text-zinc-600 dark:text-zinc-400">Дата</span>
+              <span className="piton-label">Дата</span>
               <input
                 type="date"
-                className="ml-2 rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                className="ml-2 piton-input px-2 py-1.5 text-sm"
                 value={dayDate}
                 onChange={(e) => setDayDate(e.target.value)}
               />
@@ -308,30 +356,30 @@ export default function ReportsPage() {
                 `prodazhi-den-${dayDate}.xlsx`,
               )
             }
-            className="shrink-0 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+            className="piton-btn-ghost shrink-0 px-3 py-1.5 text-xs font-medium"
           >
             {exportBusy === "day" ? "Файл…" : "Excel"}
           </button>
         </div>
         {dayReport ? (
           <div className="mt-3 space-y-3">
-            <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            <p className="text-sm piton-label">
               За день продано единиц:{" "}
-              <span className="font-medium text-zinc-900 dark:text-zinc-100">
+              <span className="font-medium piton-title">
                 {dayReport.totalQuantity}
               </span>
               {" · "}
               Сумма:{" "}
-              <span className="font-medium text-zinc-900 dark:text-zinc-100">
+              <span className="font-medium piton-title">
                 {dayReport.totalAmount.toFixed(2)}
               </span>
             </p>
             {dayReport.lines.length === 0 ? (
-              <p className="text-sm text-zinc-500">Нет продаж в этот день.</p>
+              <p className="text-sm piton-muted">Нет продаж в этот день.</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[760px] text-left text-sm">
-                  <thead className="text-zinc-500 dark:text-zinc-400">
+                  <thead className="piton-muted">
                     <tr>
                       <th className="py-2 pr-4 font-medium">Дата и время</th>
                       <th className="py-2 pr-4 font-medium">Товар</th>
@@ -346,7 +394,7 @@ export default function ReportsPage() {
                     {dayReport.lines.map((l) => (
                       <tr
                         key={l.id}
-                        className="border-t border-zinc-100 dark:border-zinc-800"
+                        className="piton-row"
                       >
                         <td className="py-2 pr-4">{fmtTime(l.createdAt)}</td>
                         <td className="py-2 pr-4">{l.productName}</td>
@@ -361,7 +409,7 @@ export default function ReportsPage() {
                             type="button"
                             disabled={deleteBusy === l.id}
                             onClick={() => void deleteSale(l.id)}
-                            className="rounded border border-red-200 px-2 py-1 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950"
+                            className="piton-btn-danger px-2 py-1 text-xs disabled:opacity-50"
                           >
                             {deleteBusy === l.id ? "Удаление…" : "Удалить"}
                           </button>
@@ -376,12 +424,12 @@ export default function ReportsPage() {
         ) : null}
       </section>
 
-      <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+      <section className="piton-card p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <button
             type="button"
             onClick={() => setRangeOpen((v) => !v)}
-            className="flex items-center gap-2 text-left text-sm font-semibold text-zinc-900 dark:text-zinc-100"
+            className="flex items-center gap-2 text-left text-sm font-semibold piton-title"
           >
             <span>{rangeOpen ? "▾" : "▸"}</span>
             Отчёт за период (по дням)
@@ -398,7 +446,7 @@ export default function ReportsPage() {
                     `prodazhi-${rangeFrom}_${rangeTo}.xlsx`,
                   )
                 }
-                className="shrink-0 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                className="piton-btn-ghost shrink-0 px-3 py-1.5 text-xs font-medium"
               >
                 {exportBusy === "range" ? "Файл…" : "Excel"}
               </button>
@@ -406,7 +454,7 @@ export default function ReportsPage() {
             <button
               type="button"
               onClick={() => setRangeOpen((v) => !v)}
-              className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-800 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+              className="piton-btn-ghost px-3 py-1.5 text-xs font-medium"
             >
               {rangeOpen ? "Скрыть" : "Открыть"}
             </button>
@@ -415,19 +463,19 @@ export default function ReportsPage() {
         {rangeOpen ? (
           <div className="mt-3 flex flex-wrap items-end gap-3">
             <label className="text-sm">
-              <span className="text-zinc-600 dark:text-zinc-400">С</span>
+              <span className="piton-label">С</span>
               <input
                 type="date"
-                className="ml-2 rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                className="ml-2 piton-input px-2 py-1.5 text-sm"
                 value={rangeFrom}
                 onChange={(e) => setRangeFrom(e.target.value)}
               />
             </label>
             <label className="text-sm">
-              <span className="text-zinc-600 dark:text-zinc-400">По</span>
+              <span className="piton-label">По</span>
               <input
                 type="date"
-                className="ml-2 rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                className="ml-2 piton-input px-2 py-1.5 text-sm"
                 value={rangeTo}
                 onChange={(e) => setRangeTo(e.target.value)}
               />
@@ -436,32 +484,32 @@ export default function ReportsPage() {
         ) : null}
         {rangeOpen && rangeReport ? (
           <div className="mt-4 space-y-6">
-            <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            <p className="text-sm piton-label">
               За период всего единиц:{" "}
-              <span className="font-medium text-zinc-900 dark:text-zinc-100">
+              <span className="font-medium piton-title">
                 {rangeReport.grandTotalQuantity}
               </span>
               {" · "}
               Сумма:{" "}
-              <span className="font-medium text-zinc-900 dark:text-zinc-100">
+              <span className="font-medium piton-title">
                 {rangeReport.grandTotalAmount.toFixed(2)}
               </span>
             </p>
             {rangeReport.days.length === 0 ? (
-              <p className="text-sm text-zinc-500">Нет продаж в периоде.</p>
+              <p className="text-sm piton-muted">Нет продаж в периоде.</p>
             ) : (
               rangeReport.days.map((d) => (
                 <div key={d.date}>
-                  <h3 className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                  <h3 className="text-sm font-medium piton-title">
                     {d.date}{" "}
-                    <span className="font-normal text-zinc-500">
+                    <span className="font-normal piton-muted">
                       — единиц: {d.totalQuantity}, сумма:{" "}
                       {d.totalAmount.toFixed(2)}
                     </span>
                   </h3>
                   <div className="mt-2 overflow-x-auto">
                     <table className="w-full min-w-[760px] text-left text-sm">
-                      <thead className="text-zinc-500 dark:text-zinc-400">
+                      <thead className="piton-muted">
                         <tr>
                           <th className="py-2 pr-4 font-medium">
                             Дата и время
@@ -478,7 +526,7 @@ export default function ReportsPage() {
                         {d.lines.map((l) => (
                           <tr
                             key={l.id}
-                            className="border-t border-zinc-100 dark:border-zinc-800"
+                            className="piton-row"
                           >
                             <td className="py-2 pr-4">
                               {fmtTime(l.createdAt)}
@@ -497,7 +545,7 @@ export default function ReportsPage() {
                                 type="button"
                                 disabled={deleteBusy === l.id}
                                 onClick={() => void deleteSale(l.id)}
-                                className="rounded border border-red-200 px-2 py-1 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950"
+                                className="piton-btn-danger px-2 py-1 text-xs disabled:opacity-50"
                               >
                                 {deleteBusy === l.id ? "Удаление…" : "Удалить"}
                               </button>
@@ -515,21 +563,21 @@ export default function ReportsPage() {
       </section>
 
       {canViewDeletedSales ? (
-        <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+        <section className="piton-card p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <button
               type="button"
               onClick={() => setDeletedOpen((v) => !v)}
               className="flex items-start gap-2 text-left"
             >
-              <span className="mt-0.5 text-sm text-zinc-900 dark:text-zinc-100">
+              <span className="mt-0.5 text-sm piton-title">
                 {deletedOpen ? "▾" : "▸"}
               </span>
               <span>
-                <span className="block text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                <span className="block text-sm font-semibold piton-title">
                   Удалённые продажи
                 </span>
-                <span className="mt-1 block text-xs text-zinc-500">
+                <span className="mt-1 block text-xs piton-muted">
                   Просмотр доступен только под учёткой admin2026.
                 </span>
               </span>
@@ -540,7 +588,7 @@ export default function ReportsPage() {
                   type="button"
                   disabled={deletedBusy}
                   onClick={() => void loadDeletedSales()}
-                  className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                  className="piton-btn-ghost px-3 py-1.5 text-xs font-medium"
                 >
                   {deletedBusy ? "Загрузка…" : "Показать удалённые"}
                 </button>
@@ -548,7 +596,7 @@ export default function ReportsPage() {
               <button
                 type="button"
                 onClick={() => setDeletedOpen((v) => !v)}
-                className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-800 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                className="piton-btn-ghost px-3 py-1.5 text-xs font-medium"
               >
                 {deletedOpen ? "Скрыть" : "Открыть"}
               </button>
@@ -556,13 +604,13 @@ export default function ReportsPage() {
           </div>
           {deletedOpen && deletedSales ? (
             deletedSales.length === 0 ? (
-              <p className="mt-3 text-sm text-zinc-500">
+              <p className="mt-3 text-sm piton-muted">
                 Удалённых продаж нет.
               </p>
             ) : (
               <div className="mt-3 overflow-x-auto">
                 <table className="w-full min-w-[860px] text-left text-sm">
-                  <thead className="text-zinc-500 dark:text-zinc-400">
+                  <thead className="piton-muted">
                     <tr>
                       <th className="py-2 pr-4 font-medium">Продано</th>
                       <th className="py-2 pr-4 font-medium">Удалено</th>
@@ -578,7 +626,7 @@ export default function ReportsPage() {
                     {deletedSales.map((l) => (
                       <tr
                         key={l.id}
-                        className="border-t border-zinc-100 dark:border-zinc-800"
+                        className="piton-row"
                       >
                         <td className="py-2 pr-4">{fmtTime(l.createdAt)}</td>
                         <td className="py-2 pr-4">{fmtTime(l.deletedAt)}</td>

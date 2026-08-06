@@ -27,6 +27,12 @@ function lineAmount(s: Sale): number {
   return Math.round(s.unitPrice * s.quantity * 100) / 100;
 }
 
+/** Дата, по которой продажа попадает в выручку */
+function revenueDate(s: Sale): Date {
+  if (s.isDeferred && s.paidAt) return new Date(s.paidAt);
+  return new Date(s.createdAt);
+}
+
 type ReportLine = {
   id: number;
   productName: string;
@@ -34,7 +40,10 @@ type ReportLine = {
   quantity: number;
   isPersonal: boolean;
   recipientName: string | null;
+  debtorName: string | null;
+  isDeferred: boolean;
   createdAt: Date;
+  paidAt: Date | null;
   amount: number;
 };
 
@@ -56,18 +65,53 @@ export class ReportsService {
     return { items, totalQuantity };
   }
 
-  async reportDay(dateStr: string) {
-    const { start, end } = dayBoundsLocal(dateStr);
+  /** Сводка по незакрытым отложенным платежам */
+  async deferredOverview() {
     const sales = await this.salesRepo
       .createQueryBuilder('s')
-      .where('s.createdAt >= :start AND s.createdAt <= :end', { start, end })
-      .andWhere('s.deletedAt IS NULL')
-      .orderBy('s.createdAt', 'ASC')
+      .where('s.deletedAt IS NULL')
+      .andWhere('s.isDeferred = :def', { def: true })
+      .andWhere('s.paidAt IS NULL')
       .getMany();
 
-    const lines = sales.map((s) => this.toLine(s));
-
+    const totalAmount =
+      Math.round(sales.reduce((a, s) => a + lineAmount(s), 0) * 100) / 100;
     const totalQuantity = sales.reduce((a, s) => a + s.quantity, 0);
+    const debtors = new Set(
+      sales.map((s) => s.debtorName?.trim() || 'Без имени'),
+    );
+
+    return {
+      totalAmount,
+      totalQuantity,
+      debtorCount: debtors.size,
+      lineCount: sales.length,
+    };
+  }
+
+  private revenueSalesQuery() {
+    return this.salesRepo
+      .createQueryBuilder('s')
+      .where('s.deletedAt IS NULL')
+      .andWhere('(s.isDeferred = :defFalse OR s.paidAt IS NOT NULL)', {
+        defFalse: false,
+      });
+  }
+
+  async reportDay(dateStr: string) {
+    const { start, end } = dayBoundsLocal(dateStr);
+    const sales = await this.revenueSalesQuery().getMany();
+
+    const inDay = sales.filter((s) => {
+      const d = revenueDate(s);
+      return d >= start && d <= end;
+    });
+    inDay.sort(
+      (a, b) => revenueDate(a).getTime() - revenueDate(b).getTime(),
+    );
+
+    const lines = inDay.map((s) => this.toLine(s));
+    const totalQuantity = inDay.reduce((a, s) => a + s.quantity, 0);
     const totalAmount =
       Math.round(lines.reduce((a, l) => a + l.amount, 0) * 100) / 100;
 
@@ -81,15 +125,14 @@ export class ReportsService {
       throw new BadRequestException('Дата «с» позже даты «по»');
     }
 
-    const sales = await this.salesRepo
-      .createQueryBuilder('s')
-      .where('s.createdAt >= :from AND s.createdAt <= :to', {
-        from: rangeStart,
-        to: rangeEnd,
-      })
-      .andWhere('s.deletedAt IS NULL')
-      .orderBy('s.createdAt', 'ASC')
-      .getMany();
+    const sales = await this.revenueSalesQuery().getMany();
+    const inRange = sales.filter((s) => {
+      const d = revenueDate(s);
+      return d >= rangeStart && d <= rangeEnd;
+    });
+    inRange.sort(
+      (a, b) => revenueDate(a).getTime() - revenueDate(b).getTime(),
+    );
 
     const dayMap = new Map<
       string,
@@ -101,8 +144,8 @@ export class ReportsService {
       }
     >();
 
-    for (const s of sales) {
-      const day = formatDayLocal(new Date(s.createdAt));
+    for (const s of inRange) {
+      const day = formatDayLocal(revenueDate(s));
       if (!dayMap.has(day)) {
         dayMap.set(day, {
           date: day,
@@ -123,9 +166,9 @@ export class ReportsService {
       a.date.localeCompare(b.date),
     );
 
-    const grandTotalQuantity = sales.reduce((a, s) => a + s.quantity, 0);
+    const grandTotalQuantity = inRange.reduce((a, s) => a + s.quantity, 0);
     const grandTotalAmount =
-      Math.round(sales.reduce((a, s) => a + lineAmount(s), 0) * 100) / 100;
+      Math.round(inRange.reduce((a, s) => a + lineAmount(s), 0) * 100) / 100;
 
     return {
       from: fromStr,
@@ -144,7 +187,10 @@ export class ReportsService {
       quantity: s.quantity,
       isPersonal: s.isPersonal,
       recipientName: s.recipientName,
+      debtorName: s.debtorName,
+      isDeferred: s.isDeferred,
       createdAt: s.createdAt,
+      paidAt: s.paidAt,
       amount: lineAmount(s),
     };
   }
@@ -153,7 +199,7 @@ export class ReportsService {
   async exportStockXlsx(): Promise<Buffer> {
     const overview = await this.stockOverview();
     const wb = new ExcelJS.Workbook();
-    wb.creator = 'Play Beta stock';
+    wb.creator = 'ПИТОН склад';
     const ws = wb.addWorksheet('Остатки', {
       properties: { defaultRowHeight: 18 },
     });
@@ -198,13 +244,22 @@ export class ReportsService {
       `Всего шт.: ${rep.totalQuantity}; сумма: ${rep.totalAmount.toFixed(2)}`,
     ]);
     ws.addRow([]);
-    ws.addRow(['Дата и время', 'Товар', 'Кто взял', 'Цена', 'Кол-во', 'Сумма']);
+    ws.addRow([
+      'Дата и время',
+      'Товар',
+      'Кто взял',
+      'Отложенный',
+      'Цена',
+      'Кол-во',
+      'Сумма',
+    ]);
     ws.getRow(4).font = { bold: true };
     for (const l of rep.lines) {
       ws.addRow([
-        new Date(l.createdAt),
+        l.paidAt ? new Date(l.paidAt) : new Date(l.createdAt),
         l.productName,
-        l.recipientName ?? '',
+        l.debtorName ?? l.recipientName ?? '',
+        l.isDeferred ? 'да' : '',
         l.unitPrice,
         l.quantity,
         l.amount,
@@ -216,6 +271,7 @@ export class ReportsService {
       { width: 18 },
       { width: 40 },
       { width: 24 },
+      { width: 12 },
       { width: 12 },
       { width: 10 },
       { width: 12 },
@@ -251,6 +307,7 @@ export class ReportsService {
       'Календарный день',
       'Товар',
       'Кто взял',
+      'Отложенный',
       'Цена',
       'Кол-во',
       'Сумма',
@@ -259,10 +316,11 @@ export class ReportsService {
     for (const d of rep.days) {
       for (const l of d.lines) {
         det.addRow([
-          new Date(l.createdAt),
+          l.paidAt ? new Date(l.paidAt) : new Date(l.createdAt),
           d.date,
           l.productName,
-          l.recipientName ?? '',
+          l.debtorName ?? l.recipientName ?? '',
+          l.isDeferred ? 'да' : '',
           l.unitPrice,
           l.quantity,
           l.amount,
@@ -275,6 +333,7 @@ export class ReportsService {
       { width: 14 },
       { width: 36 },
       { width: 24 },
+      { width: 12 },
       { width: 10 },
       { width: 8 },
       { width: 12 },

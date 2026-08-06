@@ -210,28 +210,28 @@ export default function ProductsPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-3xl font-semibold tracking-tight text-white">
+        <h1 className="font-display text-3xl font-semibold tracking-tight piton-title">
           Товары
         </h1>
-        <p className="mt-2 text-sm text-cyan-100/70">
+        <p className="mt-2 text-sm piton-muted">
           Добавление, редактирование и удаление. Цена и остаток — числа.
         </p>
       </div>
 
       {message ? (
-        <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">
+        <p className="piton-ok px-3 py-2 text-sm">
           {message}
         </p>
       ) : null}
       {error ? (
-        <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-800 dark:bg-red-950 dark:text-red-200">
+        <p className="piton-err px-3 py-2 text-sm">
           {error}
         </p>
       ) : null}
 
       {currentUser?.login === "admin2026" ? (
-        <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-          <h2 className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+        <section className="piton-card p-4">
+          <h2 className="text-sm font-medium piton-title">
             Категории
           </h2>
           <form
@@ -239,12 +239,12 @@ export default function ProductsPage() {
             onSubmit={onCreateCategory}
           >
             <label className="block min-w-[220px] text-sm">
-              <span className="text-zinc-600 dark:text-zinc-400">
+              <span className="piton-label">
                 Новая категория
               </span>
               <input
                 required
-                className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                className="mt-1 w-full piton-input px-3 py-2 text-sm"
                 value={newCategory}
                 onChange={(e) => setNewCategory(e.target.value)}
                 placeholder="Например: snacks"
@@ -252,7 +252,7 @@ export default function ProductsPage() {
             </label>
             <button
               type="submit"
-              className="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-200"
+              className="piton-btn px-4 py-2 text-sm"
             >
               Добавить категорию
             </button>
@@ -261,7 +261,7 @@ export default function ProductsPage() {
             {categories.map((c) => (
               <span
                 key={c.id}
-                className="rounded-full bg-zinc-100 px-3 py-1 text-xs text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+                className="piton-chip px-3 py-1 text-xs"
               >
                 {c.name}
               </span>
@@ -270,16 +270,16 @@ export default function ProductsPage() {
         </section>
       ) : null}
 
-      <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-        <h2 className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+      <section className="piton-card p-4">
+        <h2 className="text-sm font-medium piton-title">
           Новый товар
         </h2>
         <form className="mt-3 grid gap-3 sm:grid-cols-2" onSubmit={onCreate}>
           <label className="block text-sm">
-            <span className="text-zinc-600 dark:text-zinc-400">Название</span>
+            <span className="piton-label">Название</span>
             <input
               required
-              className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              className="mt-1 w-full piton-input px-3 py-2 text-sm"
               value={create.name}
               onChange={(e) =>
                 setCreate((s) => ({ ...s, name: e.target.value }))
@@ -287,13 +287,13 @@ export default function ProductsPage() {
             />
           </label>
           <label className="block text-sm">
-            <span className="text-zinc-600 dark:text-zinc-400">Цена</span>
+            <span className="piton-label">Цена</span>
             <input
               required
               type="number"
               min={0}
               step={0.01}
-              className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              className="mt-1 w-full piton-input px-3 py-2 text-sm"
               value={create.price}
               onChange={(e) =>
                 setCreate((s) => ({ ...s, price: e.target.value }))
@@ -301,13 +301,13 @@ export default function ProductsPage() {
             />
           </label>
           <label className="block text-sm">
-            <span className="text-zinc-600 dark:text-zinc-400">Остаток</span>
+            <span className="piton-label">Остаток</span>
             <input
               required
               type="number"
               min={0}
               step={1}
-              className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              className="mt-1 w-full piton-input px-3 py-2 text-sm"
               value={create.stock}
               onChange={(e) =>
                 setCreate((s) => ({ ...s, stock: e.target.value }))
@@ -315,9 +315,9 @@ export default function ProductsPage() {
             />
           </label>
           <label className="block text-sm">
-            <span className="text-zinc-600 dark:text-zinc-400">Категория</span>
+            <span className="piton-label">Категория</span>
             <select
-              className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              className="mt-1 w-full piton-input px-3 py-2 text-sm"
               value={create.category}
               onChange={(e) =>
                 setCreate((s) => ({ ...s, category: e.target.value }))
@@ -331,7 +331,7 @@ export default function ProductsPage() {
             </select>
           </label>
           <label className="block text-sm">
-            <span className="text-zinc-600 dark:text-zinc-400">Картинка</span>
+            <span className="piton-label">Картинка</span>
             <input
               key={createFileInputKey}
               type="file"
@@ -348,18 +348,18 @@ export default function ProductsPage() {
           <label className="flex items-center gap-2 text-sm sm:col-span-2">
             <input
               type="checkbox"
-              className="h-4 w-4 rounded border-zinc-300"
+              className="h-4 w-4 rounded border-lime-400/40 accent-lime-400"
               checked={create.isPersonal}
               onChange={(e) =>
                 setCreate((s) => ({ ...s, isPersonal: e.target.checked }))
               }
             />
-            <span className="text-zinc-600 dark:text-zinc-400">Персоналка</span>
+            <span className="piton-label">Персоналка</span>
           </label>
           <div className="sm:col-span-2">
             <button
               type="submit"
-              className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              className="piton-btn px-4 py-2 text-sm"
             >
               Сохранить
             </button>
@@ -367,20 +367,20 @@ export default function ProductsPage() {
         </form>
       </section>
 
-      <section className="rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-        <div className="border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-          <h2 className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+      <section className="piton-card">
+        <div className="border-b border-lime-400/15 px-4 py-3">
+          <h2 className="text-sm font-medium piton-title">
             Список
           </h2>
         </div>
         {loading ? (
-          <p className="p-4 text-sm text-zinc-500">Загрузка…</p>
+          <p className="p-4 text-sm piton-muted">Загрузка…</p>
         ) : items.length === 0 ? (
-          <p className="p-4 text-sm text-zinc-500">Пока нет товаров.</p>
+          <p className="p-4 text-sm piton-muted">Пока нет товаров.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-left text-sm">
-              <thead className="bg-zinc-50 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400">
+              <thead className="bg-lime-400/5 piton-table-head">
                 <tr>
                   <th className="px-4 py-2 font-medium">Фото</th>
                   <th className="px-4 py-2 font-medium">Название</th>
@@ -395,7 +395,7 @@ export default function ProductsPage() {
                 {items.map((p) => (
                   <tr
                     key={p.id}
-                    className="border-t border-zinc-100 dark:border-zinc-800"
+                    className="piton-row"
                   >
                     <td className="px-4 py-2">
                       {assetUrl(p.imageUrl) ? (
@@ -406,40 +406,42 @@ export default function ProductsPage() {
                           className="h-12 w-12 rounded object-cover"
                         />
                       ) : (
-                        <span className="text-zinc-400">—</span>
+                        <span className="piton-muted">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-2 font-medium text-zinc-900 dark:text-zinc-100">
+                    <td className="px-4 py-2 font-medium piton-title">
                       {p.name}
                     </td>
                     <td className="px-4 py-2">
-                      <span className="rounded-full bg-cyan-50 px-2 py-0.5 text-xs text-cyan-800 dark:bg-cyan-950 dark:text-cyan-200">
+                      <span className="piton-chip px-2 py-0.5 text-xs">
                         {p.category || "default"}
                       </span>
                     </td>
-                    <td className="px-4 py-2">{Number(p.price).toFixed(2)}</td>
-                    <td className="px-4 py-2">{p.stock}</td>
+                    <td className="px-4 py-2 piton-label">
+                      {Number(p.price).toFixed(2)}
+                    </td>
+                    <td className="px-4 py-2 piton-label">{p.stock}</td>
                     <td className="px-4 py-2">
                       {p.isPersonal ? (
-                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+                        <span className="piton-chip px-2 py-0.5 text-xs">
                           Да
                         </span>
                       ) : (
-                        <span className="text-zinc-400">—</span>
+                        <span className="piton-muted">—</span>
                       )}
                     </td>
                     <td className="px-4 py-2">
                       <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
-                          className="rounded border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50 dark:border-zinc-600 dark:hover:bg-zinc-900"
+                          className="piton-btn-ghost px-2 py-1 text-xs"
                           onClick={() => startEdit(p)}
                         >
                           Изменить
                         </button>
                         <button
                           type="button"
-                          className="rounded border border-red-200 px-2 py-1 text-xs text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950"
+                          className="piton-btn-danger px-2 py-1 text-xs"
                           onClick={() => void onDelete(p.id)}
                         >
                           Удалить
@@ -463,29 +465,29 @@ export default function ProductsPage() {
         >
           <button
             type="button"
-            className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm"
+            className="absolute inset-0 bg-[#04150c]/75 backdrop-blur-sm"
             aria-label="Закрыть редактирование"
             onClick={() => {
               setEditId(null);
               setEdit(emptyForm());
             }}
           />
-          <section className="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-cyan-300/20 bg-white p-4 shadow-2xl shadow-cyan-950/30 dark:border-zinc-800 dark:bg-zinc-950">
+          <section className="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto piton-card p-4">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h2
                   id="edit-product-title"
-                  className="text-base font-semibold text-zinc-900 dark:text-zinc-100"
+                  className="text-base font-semibold piton-title"
                 >
                   Редактирование товара #{editId}
                 </h2>
-                <p className="mt-1 text-xs text-zinc-500">
+                <p className="mt-1 text-xs piton-muted">
                   Измените данные товара и сохраните результат.
                 </p>
               </div>
               <button
                 type="button"
-                className="rounded-lg border border-zinc-300 px-2 py-1 text-sm text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                className="piton-btn-ghost px-2 py-1 text-sm"
                 onClick={() => {
                   setEditId(null);
                   setEdit(emptyForm());
@@ -499,12 +501,12 @@ export default function ProductsPage() {
               onSubmit={onUpdate}
             >
               <label className="block text-sm sm:col-span-2">
-                <span className="text-zinc-600 dark:text-zinc-400">
+                <span className="piton-label">
                   Название
                 </span>
                 <input
                   required
-                  className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                  className="mt-1 w-full piton-input px-3 py-2 text-sm"
                   value={edit.name}
                   onChange={(e) =>
                     setEdit((s) => ({ ...s, name: e.target.value }))
@@ -512,13 +514,13 @@ export default function ProductsPage() {
                 />
               </label>
               <label className="block text-sm">
-                <span className="text-zinc-600 dark:text-zinc-400">Цена</span>
+                <span className="piton-label">Цена</span>
                 <input
                   required
                   type="number"
                   min={0}
                   step={0.01}
-                  className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                  className="mt-1 w-full piton-input px-3 py-2 text-sm"
                   value={edit.price}
                   onChange={(e) =>
                     setEdit((s) => ({ ...s, price: e.target.value }))
@@ -526,7 +528,7 @@ export default function ProductsPage() {
                 />
               </label>
               <label className="block text-sm">
-                <span className="text-zinc-600 dark:text-zinc-400">
+                <span className="piton-label">
                   Остаток
                 </span>
                 <input
@@ -534,7 +536,7 @@ export default function ProductsPage() {
                   type="number"
                   min={0}
                   step={1}
-                  className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                  className="mt-1 w-full piton-input px-3 py-2 text-sm"
                   value={edit.stock}
                   onChange={(e) =>
                     setEdit((s) => ({ ...s, stock: e.target.value }))
@@ -542,11 +544,11 @@ export default function ProductsPage() {
                 />
               </label>
               <label className="block text-sm">
-                <span className="text-zinc-600 dark:text-zinc-400">
+                <span className="piton-label">
                   Категория
                 </span>
                 <select
-                  className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                  className="mt-1 w-full piton-input px-3 py-2 text-sm"
                   value={edit.category}
                   onChange={(e) =>
                     setEdit((s) => ({ ...s, category: e.target.value }))
@@ -560,7 +562,7 @@ export default function ProductsPage() {
                 </select>
               </label>
               <label className="block text-sm sm:col-span-2">
-                <span className="text-zinc-600 dark:text-zinc-400">
+                <span className="piton-label">
                   Новая картинка (необязательно)
                 </span>
                 <input
@@ -579,26 +581,26 @@ export default function ProductsPage() {
               <label className="flex items-center gap-2 text-sm sm:col-span-2">
                 <input
                   type="checkbox"
-                  className="h-4 w-4 rounded border-zinc-300"
+                  className="h-4 w-4 rounded border-lime-400/40 accent-lime-400"
                   checked={edit.isPersonal}
                   onChange={(e) =>
                     setEdit((s) => ({ ...s, isPersonal: e.target.checked }))
                   }
                 />
-                <span className="text-zinc-600 dark:text-zinc-400">
+                <span className="piton-label">
                   Персоналка
                 </span>
               </label>
               <div className="flex flex-wrap gap-2 sm:col-span-2">
                 <button
                   type="submit"
-                  className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                  className="piton-btn px-4 py-2 text-sm"
                 >
                   Сохранить изменения
                 </button>
                 <button
                   type="button"
-                  className="rounded-md border border-zinc-300 px-4 py-2 text-sm dark:border-zinc-600"
+                  className="piton-btn-ghost px-4 py-2 text-sm"
                   onClick={() => {
                     setEditId(null);
                     setEdit(emptyForm());
