@@ -1,7 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { apiGet, apiPostJson, assetUrl } from "@/lib/api";
+import { useCallback, useEffect, useMemo, useState, type DragEvent } from "react";
+import { apiGet, apiPatchJson, apiPostJson, assetUrl } from "@/lib/api";
+import {
+  DEFAULT_PAYMENT_METHOD,
+  type PaymentMethod,
+} from "@/lib/payment";
 
 type Category = {
   id: number;
@@ -16,6 +20,7 @@ type Product = {
   category: string;
   imageUrl: string | null;
   isPersonal: boolean;
+  sortOrder?: number;
 };
 
 type CartLine = {
@@ -38,6 +43,48 @@ function qtyForProduct(cart: CartLine[], productId: number): number {
     .reduce((sum, l) => sum + l.quantity, 0);
 }
 
+/** Переставить элемент видимого списка, сохранив позиции скрытых. */
+function reorderByVisible(
+  all: Product[],
+  visible: Product[],
+  fromVisibleIdx: number,
+  toVisibleIdx: number,
+): Product[] {
+  if (
+    fromVisibleIdx === toVisibleIdx ||
+    fromVisibleIdx < 0 ||
+    toVisibleIdx < 0 ||
+    fromVisibleIdx >= visible.length ||
+    toVisibleIdx >= visible.length
+  ) {
+    return all;
+  }
+  const visibleIds = visible.map((p) => p.id);
+  const [moved] = visibleIds.splice(fromVisibleIdx, 1);
+  visibleIds.splice(toVisibleIdx, 0, moved);
+
+  const idSet = new Set(visibleIds);
+  const byId = new Map(all.map((p) => [p.id, p]));
+  const result: Product[] = [];
+  let vi = 0;
+  for (const p of all) {
+    if (idSet.has(p.id)) {
+      const id = visibleIds[vi++];
+      result.push(byId.get(id)!);
+    } else {
+      result.push(p);
+    }
+  }
+  return result;
+}
+
+function isDragIgnoredTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  return Boolean(
+    target.closest("input, select, textarea, label, a, [data-no-drag]"),
+  );
+}
+
 export default function SalePage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -57,6 +104,12 @@ export default function SalePage() {
   const [cartOpen, setCartOpen] = useState(false);
   const [deferredOpen, setDeferredOpen] = useState(false);
   const [debtorName, setDebtorName] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(
+    DEFAULT_PAYMENT_METHOD,
+  );
+  const [dragId, setDragId] = useState<number | null>(null);
+  const [dragOverId, setDragOverId] = useState<number | null>(null);
+  const [reorderBusy, setReorderBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -236,6 +289,69 @@ export default function SalePage() {
     };
   }, [cart]);
 
+  async function persistOrder(next: Product[]) {
+    setReorderBusy(true);
+    setError(null);
+    try {
+      const saved = await apiPatchJson<Product[]>("/products/reorder", {
+        ids: next.map((p) => p.id),
+      });
+      setProducts(saved);
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "Не удалось сохранить порядок карточек",
+      );
+      await load();
+    } finally {
+      setReorderBusy(false);
+    }
+  }
+
+  function onCardDragStart(e: DragEvent, productId: number) {
+    if (isDragIgnoredTarget(e.target) || reorderBusy) {
+      e.preventDefault();
+      return;
+    }
+    setDragId(productId);
+    setDragOverId(productId);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", String(productId));
+    // Немного прозрачности «призрака» перетаскивания
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = "0.55";
+    }
+  }
+
+  function onCardDragEnd(e: DragEvent) {
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = "";
+    }
+    setDragId(null);
+    setDragOverId(null);
+  }
+
+  function onCardDragOver(e: DragEvent, productId: number) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (dragOverId !== productId) setDragOverId(productId);
+  }
+
+  function onCardDrop(e: DragEvent, toProductId: number) {
+    e.preventDefault();
+    const fromId = dragId ?? Number(e.dataTransfer.getData("text/plain"));
+    setDragId(null);
+    setDragOverId(null);
+    if (!Number.isFinite(fromId) || fromId === toProductId || reorderBusy) {
+      return;
+    }
+    const fromIdx = filteredProducts.findIndex((p) => p.id === fromId);
+    const toIdx = filteredProducts.findIndex((p) => p.id === toProductId);
+    if (fromIdx < 0 || toIdx < 0) return;
+    const next = reorderByVisible(products, filteredProducts, fromIdx, toIdx);
+    setProducts(next);
+    void persistOrder(next);
+  }
+
   const checkout = useCallback(async () => {
     if (cart.length === 0) return;
     setMessage(null);
@@ -250,6 +366,7 @@ export default function SalePage() {
             quantity: line.quantity,
             recipientName: line.recipientName ?? undefined,
             isPersonal: line.isPersonal,
+            paymentMethod,
           });
         } catch (err) {
           setError(
@@ -263,12 +380,13 @@ export default function SalePage() {
         }
       }
       setCart([]);
+      setPaymentMethod(DEFAULT_PAYMENT_METHOD);
       setMessage("Продажи записаны, остатки обновлены");
       await load();
     } finally {
       setSubmitting(false);
     }
-  }, [cart, load]);
+  }, [cart, load, paymentMethod]);
 
   useEffect(() => {
     if (!cartOpen && !deferredOpen) return;
@@ -335,7 +453,9 @@ export default function SalePage() {
         </h1>
         <p className="mt-2 text-sm piton-muted">
           Корзина — сайдбар справа; при добавлении товара открывается сама. Её
-          можно скрыть кнопкой «×» или снова открыть с полоски справа.
+          можно скрыть кнопкой «×» или снова открыть с полоски справа. Карточки
+          можно переставлять: зажмите левую кнопку мыши на карточке (не на
+          кнопках и полях) и перетащите.
         </p>
       </div>
 
@@ -496,6 +616,45 @@ export default function SalePage() {
             </div>
 
             <div className="shrink-0 space-y-2 border-t border-lime-400/15 p-3">
+              <fieldset className="space-y-1.5">
+                <legend className="text-xs font-medium piton-label">
+                  Способ расчёта
+                </legend>
+                <div className="flex gap-2">
+                  <label
+                    className={`flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md border px-2 py-2 text-xs transition ${
+                      paymentMethod === "cashless"
+                        ? "border-lime-400/50 bg-lime-400/15 text-lime-50"
+                        : "border-lime-400/20 piton-muted hover:border-lime-400/35"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="paymentMethod"
+                      className="sr-only"
+                      checked={paymentMethod === "cashless"}
+                      onChange={() => setPaymentMethod("cashless")}
+                    />
+                    Безналичный
+                  </label>
+                  <label
+                    className={`flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md border px-2 py-2 text-xs transition ${
+                      paymentMethod === "cash"
+                        ? "border-lime-400/50 bg-lime-400/15 text-lime-50"
+                        : "border-lime-400/20 piton-muted hover:border-lime-400/35"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="paymentMethod"
+                      className="sr-only"
+                      checked={paymentMethod === "cash"}
+                      onChange={() => setPaymentMethod("cash")}
+                    />
+                    Наличный
+                  </label>
+                </div>
+              </fieldset>
               <button
                 type="button"
                 disabled={submitting || cart.length === 0}
@@ -617,6 +776,7 @@ export default function SalePage() {
               <p className="mt-1 text-xs piton-muted">
                 Категория: {categoryLabel} · найдено:{" "}
                 {filteredProducts.length}
+                {reorderBusy ? " · сохранение порядка…" : ""}
               </p>
             </div>
 
@@ -648,25 +808,47 @@ export default function SalePage() {
                   return (
                     <article
                       key={p.id}
-                      className={`flex h-full min-h-[26rem] flex-col overflow-hidden piton-card ${
-                        unavailable
-                          ? "opacity-70"
+                      draggable={!reorderBusy}
+                      onDragStart={(e) => onCardDragStart(e, p.id)}
+                      onDragEnd={onCardDragEnd}
+                      onDragOver={(e) => onCardDragOver(e, p.id)}
+                      onDrop={(e) => onCardDrop(e, p.id)}
+                      className={`flex h-full min-h-[26rem] flex-col overflow-hidden piton-card cursor-grab active:cursor-grabbing ${
+                        unavailable ? "opacity-70" : ""
+                      } ${
+                        dragId === p.id ? "opacity-50" : ""
+                      } ${
+                        dragOverId === p.id && dragId !== null && dragId !== p.id
+                          ? "ring-2 ring-lime-400/60"
                           : ""
                       }`}
                     >
-                      <button
-                        type="button"
-                        disabled={!canAdd || !draftOk || !recipientOk}
-                        onClick={() => addToCart(p)}
-                        className="relative h-48 w-full shrink-0 overflow-hidden bg-[#071a0f] text-left transition hover:brightness-95 disabled:cursor-not-allowed disabled:hover:brightness-100"
+                      <div
+                        role="button"
+                        tabIndex={canAdd && draftOk && recipientOk ? 0 : -1}
+                        aria-disabled={!canAdd || !draftOk || !recipientOk}
                         aria-label={`Добавить ${p.name} в корзину`}
+                        onClick={() => {
+                          if (canAdd && draftOk && recipientOk) addToCart(p);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key !== "Enter" && e.key !== " ") return;
+                          e.preventDefault();
+                          if (canAdd && draftOk && recipientOk) addToCart(p);
+                        }}
+                        className={`relative h-48 w-full shrink-0 overflow-hidden bg-[#071a0f] text-left transition hover:brightness-95 ${
+                          !canAdd || !draftOk || !recipientOk
+                            ? "cursor-grab"
+                            : "cursor-grab"
+                        }`}
                       >
                         {img ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
                             src={img}
                             alt=""
-                            className="h-full w-full object-cover"
+                            draggable={false}
+                            className="pointer-events-none h-full w-full object-cover"
                           />
                         ) : (
                           <div className="flex h-full w-full items-center justify-center text-xs piton-muted">
@@ -678,7 +860,7 @@ export default function SalePage() {
                             Нет в наличии
                           </span>
                         ) : null}
-                      </button>
+                      </div>
                       <div className="flex flex-1 flex-col gap-2 p-3">
                         <h2 className="line-clamp-2 text-sm font-semibold piton-title">
                           {p.name}
@@ -741,6 +923,7 @@ export default function SalePage() {
                         </label>
                         <button
                           type="button"
+                          data-no-drag
                           disabled={!canAdd || !draftOk || !recipientOk}
                           onClick={() => addToCart(p)}
                           className="mt-auto w-full piton-btn w-full py-2 text-sm disabled:cursor-not-allowed"

@@ -2,6 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiGet, apiPatchJson, apiPostJson } from "@/lib/api";
+import {
+  DEFAULT_PAYMENT_METHOD,
+  type PaymentMethod,
+} from "@/lib/payment";
 
 type DeferredLine = {
   id: number;
@@ -32,6 +36,10 @@ export default function DeferredPaymentsPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [editingName, setEditingName] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
+  const [payTarget, setPayTarget] = useState<string | null>(null);
+  const [payMethod, setPayMethod] = useState<PaymentMethod>(
+    DEFAULT_PAYMENT_METHOD,
+  );
 
   const load = useCallback(async (q?: string) => {
     setError(null);
@@ -107,15 +115,24 @@ export default function DeferredPaymentsPage() {
     }
   }
 
-  async function markPaid(name: string) {
-    if (!confirm(`Отметить оплаченным долг «${name}»? Сумма попадёт в отчёт.`)) {
-      return;
-    }
-    setBusy(`pay:${name}`);
+  function openPay(name: string) {
+    setPayTarget(name);
+    setPayMethod(DEFAULT_PAYMENT_METHOD);
+    setMessage(null);
+    setError(null);
+  }
+
+  async function confirmPay() {
+    if (!payTarget) return;
+    setBusy(`pay:${payTarget}`);
     setError(null);
     try {
-      await apiPostJson("/sales/deferred/pay", { debtorName: name });
-      setMessage(`Оплачено: ${name}`);
+      await apiPostJson("/sales/deferred/pay", {
+        debtorName: payTarget,
+        paymentMethod: payMethod,
+      });
+      setMessage(`Оплачено: ${payTarget}`);
+      setPayTarget(null);
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Ошибка оплаты");
@@ -258,7 +275,7 @@ export default function DeferredPaymentsPage() {
                       <button
                         type="button"
                         disabled={!!busy}
-                        onClick={() => void markPaid(g.name)}
+                        onClick={() => openPay(g.name)}
                         className="piton-btn px-3 py-1.5 text-xs"
                       >
                         {busy === `pay:${g.name}` ? "…" : "Оплачен"}
@@ -311,6 +328,88 @@ export default function DeferredPaymentsPage() {
           })}
         </div>
       )}
+
+      {payTarget ? (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-[#04150c]/70 p-4 backdrop-blur-sm"
+          role="presentation"
+          onClick={() => {
+            if (!busy) setPayTarget(null);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pay-title"
+            className="piton-card w-full max-w-md p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="pay-title" className="text-lg font-semibold text-white">
+              Оплата долга
+            </h2>
+            <p className="mt-1 text-sm piton-muted">
+              «{payTarget}» — сумма попадёт в отчёт. Выберите способ расчёта.
+            </p>
+            <fieldset className="mt-4 space-y-1.5">
+              <legend className="text-sm font-medium piton-label">
+                Способ расчёта
+              </legend>
+              <div className="flex gap-2">
+                <label
+                  className={`flex flex-1 cursor-pointer items-center justify-center rounded-md border px-2 py-2.5 text-sm transition ${
+                    payMethod === "cashless"
+                      ? "border-lime-400/50 bg-lime-400/15 text-lime-50"
+                      : "border-lime-400/20 piton-muted hover:border-lime-400/35"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="deferredPayMethod"
+                    className="sr-only"
+                    checked={payMethod === "cashless"}
+                    onChange={() => setPayMethod("cashless")}
+                  />
+                  Безналичный
+                </label>
+                <label
+                  className={`flex flex-1 cursor-pointer items-center justify-center rounded-md border px-2 py-2.5 text-sm transition ${
+                    payMethod === "cash"
+                      ? "border-lime-400/50 bg-lime-400/15 text-lime-50"
+                      : "border-lime-400/20 piton-muted hover:border-lime-400/35"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="deferredPayMethod"
+                    className="sr-only"
+                    checked={payMethod === "cash"}
+                    onChange={() => setPayMethod("cash")}
+                  />
+                  Наличный
+                </label>
+              </div>
+            </fieldset>
+            <div className="mt-5 flex gap-2">
+              <button
+                type="button"
+                disabled={!!busy}
+                onClick={() => setPayTarget(null)}
+                className="piton-btn-ghost flex-1 px-3 py-2 text-sm"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                disabled={!!busy}
+                onClick={() => void confirmPay()}
+                className="piton-btn flex-1 px-3 py-2 text-sm"
+              >
+                {busy === `pay:${payTarget}` ? "Сохранение…" : "Оплачен"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

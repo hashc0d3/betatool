@@ -5,6 +5,10 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
+import {
+  DEFAULT_PAYMENT_METHOD,
+  PaymentMethod,
+} from '../common/payment-method';
 import { Product } from '../entities/product.entity';
 import { Sale } from '../entities/sale.entity';
 import { CreateSaleDto } from './dto/create-sale.dto';
@@ -17,6 +21,10 @@ function lineAmount(s: Sale): number {
   return Math.round(s.unitPrice * s.quantity * 100) / 100;
 }
 
+function resolvePaymentMethod(raw?: PaymentMethod | null): PaymentMethod {
+  return raw === 'cash' || raw === 'cashless' ? raw : DEFAULT_PAYMENT_METHOD;
+}
+
 @Injectable()
 export class SalesService {
   constructor(
@@ -25,12 +33,14 @@ export class SalesService {
     private readonly dataSource: DataSource,
   ) {}
 
-  async create(dto: CreateSaleDto) {
+  async create(dto: CreateSaleDto, acceptedBy: string) {
     return this.dataSource.transaction(async (manager) => {
       return this.createSaleLine(manager, dto, {
         isDeferred: false,
         debtorName: null,
         paidAt: null,
+        paymentMethod: resolvePaymentMethod(dto.paymentMethod),
+        acceptedBy,
       });
     });
   }
@@ -48,6 +58,8 @@ export class SalesService {
           isDeferred: true,
           debtorName,
           paidAt: null,
+          paymentMethod: null,
+          acceptedBy: null,
         });
         saved.push(sale);
       }
@@ -62,6 +74,8 @@ export class SalesService {
       isDeferred: boolean;
       debtorName: string | null;
       paidAt: Date | null;
+      paymentMethod: PaymentMethod | null;
+      acceptedBy: string | null;
     },
   ) {
     const productRepo = manager.getRepository(Product);
@@ -98,6 +112,8 @@ export class SalesService {
       isDeferred: opts.isDeferred,
       debtorName: opts.debtorName,
       paidAt: opts.paidAt,
+      paymentMethod: opts.paymentMethod,
+      acceptedBy: opts.acceptedBy,
     });
     return saleRepo.save(sale);
   }
@@ -159,13 +175,23 @@ export class SalesService {
     return this.salesRepo.save(sale);
   }
 
-  async markPaid(id: number) {
+  async markPaid(
+    id: number,
+    acceptedBy: string,
+    paymentMethodRaw?: PaymentMethod | null,
+  ) {
     const sale = await this.requireOpenDeferred(id);
     sale.paidAt = new Date();
+    sale.paymentMethod = resolvePaymentMethod(paymentMethodRaw);
+    sale.acceptedBy = acceptedBy;
     return this.salesRepo.save(sale);
   }
 
-  async markPaidByDebtor(debtorNameRaw: string) {
+  async markPaidByDebtor(
+    debtorNameRaw: string,
+    acceptedBy: string,
+    paymentMethodRaw?: PaymentMethod | null,
+  ) {
     const debtorName = debtorNameRaw.trim();
     if (!debtorName) {
       throw new BadRequestException('Укажите имя');
@@ -184,11 +210,14 @@ export class SalesService {
     }
 
     const paidAt = new Date();
+    const paymentMethod = resolvePaymentMethod(paymentMethodRaw);
     for (const s of open) {
       s.paidAt = paidAt;
+      s.paymentMethod = paymentMethod;
+      s.acceptedBy = acceptedBy;
     }
     await this.salesRepo.save(open);
-    return { paid: open.length, paidAt };
+    return { paid: open.length, paidAt, paymentMethod, acceptedBy };
   }
 
   async removeByDebtor(debtorNameRaw: string, deletedBy: string) {

@@ -7,6 +7,7 @@ import { CategoriesModule } from './categories/categories.module';
 import { Category } from './entities/category.entity';
 import { Product } from './entities/product.entity';
 import { Sale } from './entities/sale.entity';
+import { StockChange } from './entities/stock-change.entity';
 import { ProductsModule } from './products/products.module';
 import { ReportsModule } from './reports/reports.module';
 import { SalesModule } from './sales/sales.module';
@@ -16,7 +17,7 @@ import { SalesModule } from './sales/sales.module';
     TypeOrmModule.forRoot({
       type: 'better-sqlite3',
       database: join(process.cwd(), 'data', 'club.sqlite'),
-      entities: [Product, Sale, Category],
+      entities: [Product, Sale, Category, StockChange],
       synchronize: true,
     }),
     AuthModule,

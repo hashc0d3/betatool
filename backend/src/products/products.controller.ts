@@ -7,14 +7,23 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Req,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import type { Request } from 'express';
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+import { ReorderProductsDto } from './dto/reorder-products.dto';
 import { imageFileFilter, productImageStorage } from './multer.config';
+
+type AuthenticatedRequest = Request & {
+  user?: {
+    login?: string;
+  };
+};
 
 @Controller('products')
 export class ProductsController {
@@ -23,6 +32,11 @@ export class ProductsController {
   @Get()
   findAll() {
     return this.productsService.findAll();
+  }
+
+  @Patch('reorder')
+  reorder(@Body() dto: ReorderProductsDto) {
+    return this.productsService.reorder(dto.ids);
   }
 
   @Get(':id')
@@ -39,9 +53,14 @@ export class ProductsController {
   )
   create(
     @Body() dto: CreateProductDto,
-    @UploadedFile() file?: Express.Multer.File,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Req() req: AuthenticatedRequest,
   ) {
-    return this.productsService.create(dto, file?.filename ?? null);
+    return this.productsService.create(
+      dto,
+      file?.filename ?? null,
+      req.user?.login ?? 'unknown',
+    );
   }
 
   @Patch(':id')
@@ -54,9 +73,15 @@ export class ProductsController {
   update(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateProductDto,
-    @UploadedFile() file?: Express.Multer.File,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Req() req: AuthenticatedRequest,
   ) {
-    return this.productsService.update(id, dto, file?.filename ?? null);
+    return this.productsService.update(
+      id,
+      dto,
+      file?.filename ?? null,
+      req.user?.login ?? 'unknown',
+    );
   }
 
   @Delete(':id')

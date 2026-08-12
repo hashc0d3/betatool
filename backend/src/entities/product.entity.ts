@@ -22,4 +22,8 @@ export class Product {
 
   @Column('boolean', { default: false })
   isPersonal: boolean;
+
+  /** Порядок отображения карточек (меньше — выше/левее) */
+  @Column('int', { default: 0 })
+  sortOrder: number;
 }

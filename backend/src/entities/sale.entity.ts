@@ -40,6 +40,14 @@ export class Sale {
   @Column({ type: 'datetime', nullable: true })
   paidAt: Date | null;
 
+  /** Наличный / безналичный; для отложенных — после оплаты */
+  @Column({ type: 'varchar', nullable: true })
+  paymentMethod: 'cash' | 'cashless' | null;
+
+  /** Логин учётной записи, принявшей платёж */
+  @Column({ type: 'varchar', nullable: true })
+  acceptedBy: string | null;
+
   @Column({ type: 'datetime', nullable: true })
   deletedAt: Date | null;
 

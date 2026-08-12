@@ -2,8 +2,10 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import ExcelJS from 'exceljs';
 import { Repository } from 'typeorm';
+import { paymentMethodLabel } from '../common/payment-method';
 import { Product } from '../entities/product.entity';
 import { Sale } from '../entities/sale.entity';
+import { StockChange } from '../entities/stock-change.entity';
 
 function dayBoundsLocal(dateStr: string): { start: Date; end: Date } {
   const parts = dateStr.split('-').map(Number);
@@ -42,6 +44,8 @@ type ReportLine = {
   recipientName: string | null;
   debtorName: string | null;
   isDeferred: boolean;
+  paymentMethod: 'cash' | 'cashless' | null;
+  acceptedBy: string | null;
   createdAt: Date;
   paidAt: Date | null;
   amount: number;
@@ -54,6 +58,8 @@ export class ReportsService {
     private readonly productsRepo: Repository<Product>,
     @InjectRepository(Sale)
     private readonly salesRepo: Repository<Sale>,
+    @InjectRepository(StockChange)
+    private readonly stockChangesRepo: Repository<StockChange>,
   ) {}
 
   async stockOverview() {
@@ -63,6 +69,14 @@ export class ReportsService {
     });
     const totalQuantity = items.reduce((a, p) => a + p.stock, 0);
     return { items, totalQuantity };
+  }
+
+  /** История ручных изменений количества товара */
+  async stockChangeHistory() {
+    const items = await this.stockChangesRepo.find({
+      order: { createdAt: 'DESC' },
+    });
+    return { items };
   }
 
   /** Сводка по незакрытым отложенным платежам */
@@ -189,6 +203,8 @@ export class ReportsService {
       recipientName: s.recipientName,
       debtorName: s.debtorName,
       isDeferred: s.isDeferred,
+      paymentMethod: s.paymentMethod,
+      acceptedBy: s.acceptedBy,
       createdAt: s.createdAt,
       paidAt: s.paidAt,
       amount: lineAmount(s),
@@ -249,6 +265,8 @@ export class ReportsService {
       'Товар',
       'Кто взял',
       'Отложенный',
+      'Расчёт',
+      'Принял',
       'Цена',
       'Кол-во',
       'Сумма',
@@ -260,6 +278,8 @@ export class ReportsService {
         l.productName,
         l.debtorName ?? l.recipientName ?? '',
         l.isDeferred ? 'да' : '',
+        paymentMethodLabel(l.paymentMethod),
+        l.acceptedBy ?? '',
         l.unitPrice,
         l.quantity,
         l.amount,
@@ -272,6 +292,8 @@ export class ReportsService {
       { width: 40 },
       { width: 24 },
       { width: 12 },
+      { width: 14 },
+      { width: 18 },
       { width: 12 },
       { width: 10 },
       { width: 12 },
@@ -308,6 +330,8 @@ export class ReportsService {
       'Товар',
       'Кто взял',
       'Отложенный',
+      'Расчёт',
+      'Принял',
       'Цена',
       'Кол-во',
       'Сумма',
@@ -321,6 +345,8 @@ export class ReportsService {
           l.productName,
           l.debtorName ?? l.recipientName ?? '',
           l.isDeferred ? 'да' : '',
+          paymentMethodLabel(l.paymentMethod),
+          l.acceptedBy ?? '',
           l.unitPrice,
           l.quantity,
           l.amount,
@@ -334,6 +360,8 @@ export class ReportsService {
       { width: 36 },
       { width: 24 },
       { width: 12 },
+      { width: 14 },
+      { width: 18 },
       { width: 10 },
       { width: 8 },
       { width: 12 },

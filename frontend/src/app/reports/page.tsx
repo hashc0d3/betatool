@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiDelete, apiDownloadFile, apiGet } from "@/lib/api";
+import { paymentMethodLabel, type PaymentMethod } from "@/lib/payment";
 
 type StockRow = { id: number; name: string; price: number; stock: number };
 
@@ -22,6 +23,8 @@ type ReportLine = {
   recipientName: string | null;
   debtorName?: string | null;
   isDeferred?: boolean;
+  paymentMethod?: PaymentMethod | null;
+  acceptedBy?: string | null;
   createdAt: string;
   paidAt?: string | null;
   amount: number;
@@ -30,6 +33,16 @@ type ReportLine = {
 type DeletedSale = ReportLine & {
   deletedAt: string;
   deletedBy: string | null;
+};
+
+type StockChangeRow = {
+  id: number;
+  productId: number;
+  productName: string;
+  oldStock: number;
+  newStock: number;
+  changedBy: string;
+  createdAt: string;
 };
 
 type CurrentUser = {
@@ -60,6 +73,10 @@ function todayInputValue() {
   return `${y}-${m}-${day}`;
 }
 
+function lineTime(l: ReportLine): string {
+  return l.paidAt || l.createdAt;
+}
+
 export default function ReportsPage() {
   const [stock, setStock] = useState<{
     items: StockRow[];
@@ -72,15 +89,20 @@ export default function ReportsPage() {
   const [rangeTo, setRangeTo] = useState(todayInputValue);
   const [rangeReport, setRangeReport] = useState<RangeReport | null>(null);
   const [deletedSales, setDeletedSales] = useState<DeletedSale[] | null>(null);
+  const [stockChanges, setStockChanges] = useState<StockChangeRow[] | null>(
+    null,
+  );
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [exportBusy, setExportBusy] = useState<string | null>(null);
   const [deleteBusy, setDeleteBusy] = useState<number | null>(null);
   const [deletedBusy, setDeletedBusy] = useState(false);
+  const [stockChangesBusy, setStockChangesBusy] = useState(false);
   const [stockOpen, setStockOpen] = useState(false);
   const [rangeOpen, setRangeOpen] = useState(false);
   const [deletedOpen, setDeletedOpen] = useState(false);
+  const [stockChangesOpen, setStockChangesOpen] = useState(false);
   const canViewDeletedSales = currentUser?.login === "admin2026";
 
   const loadStock = useCallback(async () => {
@@ -211,6 +233,66 @@ export default function ReportsPage() {
     }
   }
 
+  async function loadStockChanges() {
+    setErr(null);
+    setStockChangesBusy(true);
+    try {
+      const res = await apiGet<{ items: StockChangeRow[] }>(
+        "/reports/stock-changes",
+      );
+      setStockChanges(res.items);
+    } catch (e) {
+      setErr(
+        e instanceof Error ? e.message : "Не удалось загрузить историю остатков",
+      );
+    } finally {
+      setStockChangesBusy(false);
+    }
+  }
+
+  function renderSaleRows(lines: ReportLine[]) {
+    return lines.map((l) => (
+      <tr key={l.id} className="piton-row">
+        <td className="py-2 pr-4">{fmtTime(lineTime(l))}</td>
+        <td className="py-2 pr-4">{l.productName}</td>
+        <td className="py-2 pr-4">
+          {l.debtorName ?? l.recipientName ?? "—"}
+        </td>
+        <td className="py-2 pr-4">{paymentMethodLabel(l.paymentMethod)}</td>
+        <td className="py-2 pr-4">{l.acceptedBy ?? "—"}</td>
+        <td className="py-2 pr-4">{Number(l.unitPrice).toFixed(2)}</td>
+        <td className="py-2 pr-4">{l.quantity}</td>
+        <td className="py-2 pr-4">{l.amount.toFixed(2)}</td>
+        <td className="py-2">
+          <button
+            type="button"
+            disabled={deleteBusy === l.id}
+            onClick={() => void deleteSale(l.id)}
+            className="piton-btn-danger px-2 py-1 text-xs disabled:opacity-50"
+          >
+            {deleteBusy === l.id ? "Удаление…" : "Удалить"}
+          </button>
+        </td>
+      </tr>
+    ));
+  }
+
+  const saleTableHead = (
+    <thead className="piton-muted">
+      <tr>
+        <th className="py-2 pr-4 font-medium">Дата и время</th>
+        <th className="py-2 pr-4 font-medium">Товар</th>
+        <th className="py-2 pr-4 font-medium">Кто взял</th>
+        <th className="py-2 pr-4 font-medium">Расчёт</th>
+        <th className="py-2 pr-4 font-medium">Принял</th>
+        <th className="py-2 pr-4 font-medium">Цена</th>
+        <th className="py-2 font-medium">Кол-во</th>
+        <th className="py-2 font-medium">Сумма</th>
+        <th className="py-2 font-medium">Действия</th>
+      </tr>
+    </thead>
+  );
+
   return (
     <div className="space-y-10">
       <div>
@@ -331,6 +413,97 @@ export default function ReportsPage() {
       </section>
 
       <section className="piton-card p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              const next = !stockChangesOpen;
+              setStockChangesOpen(next);
+              if (next && !stockChanges) void loadStockChanges();
+            }}
+            className="flex items-start gap-2 text-left"
+          >
+            <span className="mt-0.5 text-sm piton-title">
+              {stockChangesOpen ? "▾" : "▸"}
+            </span>
+            <span>
+              <span className="block text-sm font-semibold piton-title">
+                История изменений количества
+              </span>
+              <span className="mt-1 block text-xs piton-muted">
+                Кто и когда менял остаток товара в карточке товара.
+              </span>
+            </span>
+          </button>
+          <div className="flex items-center gap-2">
+            {stockChangesOpen ? (
+              <button
+                type="button"
+                disabled={stockChangesBusy}
+                onClick={() => void loadStockChanges()}
+                className="piton-btn-ghost px-3 py-1.5 text-xs font-medium"
+              >
+                {stockChangesBusy ? "Загрузка…" : "Обновить"}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => {
+                const next = !stockChangesOpen;
+                setStockChangesOpen(next);
+                if (next && !stockChanges) void loadStockChanges();
+              }}
+              className="piton-btn-ghost px-3 py-1.5 text-xs font-medium"
+            >
+              {stockChangesOpen ? "Скрыть" : "Открыть"}
+            </button>
+          </div>
+        </div>
+        {stockChangesOpen && stockChangesBusy && !stockChanges ? (
+          <p className="mt-3 text-sm piton-muted">Загрузка…</p>
+        ) : null}
+        {stockChangesOpen && stockChanges ? (
+          stockChanges.length === 0 ? (
+            <p className="mt-3 text-sm piton-muted">
+              Изменений количества пока нет.
+            </p>
+          ) : (
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full min-w-[720px] text-left text-sm">
+                <thead className="piton-muted">
+                  <tr>
+                    <th className="py-2 pr-4 font-medium">Дата и время</th>
+                    <th className="py-2 pr-4 font-medium">Товар</th>
+                    <th className="py-2 pr-4 font-medium">Было</th>
+                    <th className="py-2 pr-4 font-medium">Стало</th>
+                    <th className="py-2 pr-4 font-medium">Δ</th>
+                    <th className="py-2 font-medium">Кто изменил</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stockChanges.map((c) => {
+                    const delta = c.newStock - c.oldStock;
+                    return (
+                      <tr key={c.id} className="piton-row">
+                        <td className="py-2 pr-4">{fmtTime(c.createdAt)}</td>
+                        <td className="py-2 pr-4">{c.productName}</td>
+                        <td className="py-2 pr-4 tabular-nums">{c.oldStock}</td>
+                        <td className="py-2 pr-4 tabular-nums">{c.newStock}</td>
+                        <td className="py-2 pr-4 tabular-nums">
+                          {delta > 0 ? `+${delta}` : delta}
+                        </td>
+                        <td className="py-2">{c.changedBy}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )
+        ) : null}
+      </section>
+
+      <section className="piton-card p-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div className="flex flex-wrap items-end gap-3">
             <h2 className="w-full text-sm font-semibold piton-title sm:w-auto">
@@ -378,45 +551,9 @@ export default function ReportsPage() {
               <p className="text-sm piton-muted">Нет продаж в этот день.</p>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[760px] text-left text-sm">
-                  <thead className="piton-muted">
-                    <tr>
-                      <th className="py-2 pr-4 font-medium">Дата и время</th>
-                      <th className="py-2 pr-4 font-medium">Товар</th>
-                      <th className="py-2 pr-4 font-medium">Кто взял</th>
-                      <th className="py-2 pr-4 font-medium">Цена</th>
-                      <th className="py-2 font-medium">Кол-во</th>
-                      <th className="py-2 font-medium">Сумма</th>
-                      <th className="py-2 font-medium">Действия</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {dayReport.lines.map((l) => (
-                      <tr
-                        key={l.id}
-                        className="piton-row"
-                      >
-                        <td className="py-2 pr-4">{fmtTime(l.createdAt)}</td>
-                        <td className="py-2 pr-4">{l.productName}</td>
-                        <td className="py-2 pr-4">{l.recipientName ?? "—"}</td>
-                        <td className="py-2 pr-4">
-                          {Number(l.unitPrice).toFixed(2)}
-                        </td>
-                        <td className="py-2 pr-4">{l.quantity}</td>
-                        <td className="py-2 pr-4">{l.amount.toFixed(2)}</td>
-                        <td className="py-2">
-                          <button
-                            type="button"
-                            disabled={deleteBusy === l.id}
-                            onClick={() => void deleteSale(l.id)}
-                            className="piton-btn-danger px-2 py-1 text-xs disabled:opacity-50"
-                          >
-                            {deleteBusy === l.id ? "Удаление…" : "Удалить"}
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
+                <table className="w-full min-w-[980px] text-left text-sm">
+                  {saleTableHead}
+                  <tbody>{renderSaleRows(dayReport.lines)}</tbody>
                 </table>
               </div>
             )}
@@ -508,51 +645,9 @@ export default function ReportsPage() {
                     </span>
                   </h3>
                   <div className="mt-2 overflow-x-auto">
-                    <table className="w-full min-w-[760px] text-left text-sm">
-                      <thead className="piton-muted">
-                        <tr>
-                          <th className="py-2 pr-4 font-medium">
-                            Дата и время
-                          </th>
-                          <th className="py-2 pr-4 font-medium">Товар</th>
-                          <th className="py-2 pr-4 font-medium">Кто взял</th>
-                          <th className="py-2 pr-4 font-medium">Цена</th>
-                          <th className="py-2 font-medium">Кол-во</th>
-                          <th className="py-2 font-medium">Сумма</th>
-                          <th className="py-2 font-medium">Действия</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {d.lines.map((l) => (
-                          <tr
-                            key={l.id}
-                            className="piton-row"
-                          >
-                            <td className="py-2 pr-4">
-                              {fmtTime(l.createdAt)}
-                            </td>
-                            <td className="py-2 pr-4">{l.productName}</td>
-                            <td className="py-2 pr-4">
-                              {l.recipientName ?? "—"}
-                            </td>
-                            <td className="py-2 pr-4">
-                              {Number(l.unitPrice).toFixed(2)}
-                            </td>
-                            <td className="py-2 pr-4">{l.quantity}</td>
-                            <td className="py-2 pr-4">{l.amount.toFixed(2)}</td>
-                            <td className="py-2">
-                              <button
-                                type="button"
-                                disabled={deleteBusy === l.id}
-                                onClick={() => void deleteSale(l.id)}
-                                className="piton-btn-danger px-2 py-1 text-xs disabled:opacity-50"
-                              >
-                                {deleteBusy === l.id ? "Удаление…" : "Удалить"}
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
+                    <table className="w-full min-w-[980px] text-left text-sm">
+                      {saleTableHead}
+                      <tbody>{renderSaleRows(d.lines)}</tbody>
                     </table>
                   </div>
                 </div>
@@ -609,7 +704,7 @@ export default function ReportsPage() {
               </p>
             ) : (
               <div className="mt-3 overflow-x-auto">
-                <table className="w-full min-w-[860px] text-left text-sm">
+                <table className="w-full min-w-[980px] text-left text-sm">
                   <thead className="piton-muted">
                     <tr>
                       <th className="py-2 pr-4 font-medium">Продано</th>
@@ -617,6 +712,8 @@ export default function ReportsPage() {
                       <th className="py-2 pr-4 font-medium">Кем</th>
                       <th className="py-2 pr-4 font-medium">Товар</th>
                       <th className="py-2 pr-4 font-medium">Кто взял</th>
+                      <th className="py-2 pr-4 font-medium">Расчёт</th>
+                      <th className="py-2 pr-4 font-medium">Принял</th>
                       <th className="py-2 pr-4 font-medium">Цена</th>
                       <th className="py-2 pr-4 font-medium">Кол-во</th>
                       <th className="py-2 font-medium">Сумма</th>
@@ -633,6 +730,10 @@ export default function ReportsPage() {
                         <td className="py-2 pr-4">{l.deletedBy ?? "—"}</td>
                         <td className="py-2 pr-4">{l.productName}</td>
                         <td className="py-2 pr-4">{l.recipientName ?? "—"}</td>
+                        <td className="py-2 pr-4">
+                          {paymentMethodLabel(l.paymentMethod)}
+                        </td>
+                        <td className="py-2 pr-4">{l.acceptedBy ?? "—"}</td>
                         <td className="py-2 pr-4">
                           {Number(l.unitPrice).toFixed(2)}
                         </td>

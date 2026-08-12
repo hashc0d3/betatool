@@ -41,6 +41,12 @@ export class ReportsController {
     return this.reportsService.stockOverview();
   }
 
+  /** История изменений количества товара */
+  @Get('stock-changes')
+  stockChanges() {
+    return this.reportsService.stockChangeHistory();
+  }
+
   /** Незакрытые отложенные платежи (долги) */
   @Get('deferred')
   deferred() {

@@ -17,6 +17,8 @@ import { CreateSaleDto } from './dto/create-sale.dto';
 import { CreateDeferredSaleDto } from './dto/create-deferred-sale.dto';
 import {
   DebtorNameDto,
+  PayDebtorDto,
+  PaySaleDto,
   RenameDebtorDto,
   UpdateDebtorDto,
 } from './dto/update-debtor.dto';
@@ -32,8 +34,8 @@ export class SalesController {
   constructor(private readonly salesService: SalesService) {}
 
   @Post()
-  create(@Body() dto: CreateSaleDto) {
-    return this.salesService.create(dto);
+  create(@Body() dto: CreateSaleDto, @Req() req: AuthenticatedRequest) {
+    return this.salesService.create(dto, req.user?.login ?? 'unknown');
   }
 
   @Post('deferred')
@@ -52,8 +54,15 @@ export class SalesController {
   }
 
   @Post('deferred/pay')
-  payByDebtor(@Body() dto: DebtorNameDto) {
-    return this.salesService.markPaidByDebtor(dto.debtorName);
+  payByDebtor(
+    @Body() dto: PayDebtorDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.salesService.markPaidByDebtor(
+      dto.debtorName,
+      req.user?.login ?? 'unknown',
+      dto.paymentMethod,
+    );
   }
 
   @Post('deferred/remove')
@@ -82,8 +91,16 @@ export class SalesController {
   }
 
   @Post(':id/pay')
-  markPaid(@Param('id', ParseIntPipe) id: number) {
-    return this.salesService.markPaid(id);
+  markPaid(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: PaySaleDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.salesService.markPaid(
+      id,
+      req.user?.login ?? 'unknown',
+      dto?.paymentMethod,
+    );
   }
 
   @Delete(':id')
